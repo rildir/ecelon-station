@@ -1,0 +1,23 @@
+{
+  "name": "ecelon-station",
+  "version": "0.1.0",
+  "description": "Projelerini izometrik bir uzay istasyonunda modüllere dönüştüren, her modülde bir Claude Code ajanı çalıştıran yerel kontrol odası.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --watch server/index.js",
+    "dev": "MOCK=1 node server/index.js",
+    "dev:win": "set MOCK=1&& node server/index.js",
+    "start:once": "node server/index.js"
+  },
+  "dependencies": {
+    "@fontsource/bricolage-grotesque": "^5.3.0",
+    "@fontsource/instrument-sans": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "express": "^4.21.2",
+    "three": "0.170.0",
+    "ws": "^8.18.0"
+  },
+  "license": "MIT",
+  "private": true
+}

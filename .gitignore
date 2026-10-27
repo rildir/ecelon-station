@@ -1,0 +1,22 @@
+# bağımlılıklar
+node_modules/
+
+# yerel ve özel veriler: ajan listesi, yerel yollar, sohbetler, yüklenen görseller, kullanım bilgisi
+data/
+logs/
+*.log
+
+# ortam / gizli ayarlar
+.env
+.env.*
+
+# indirilmiş ham varlık paketleri (kullanılanlar public/assets içinde)
+kenney_*.zip
+_kenney/
+
+# işletim sistemi / editör
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

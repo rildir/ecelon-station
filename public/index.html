@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ecelon Station</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/icon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1b2038">
+<!-- fontlar yerelden (internet gerekmez) -->
+<link rel="stylesheet" href="/vendor/fonts/bricolage-grotesque/500.css">
+<link rel="stylesheet" href="/vendor/fonts/bricolage-grotesque/700.css">
+<link rel="stylesheet" href="/vendor/fonts/bricolage-grotesque/800.css">
+<link rel="stylesheet" href="/vendor/fonts/instrument-sans/400.css">
+<link rel="stylesheet" href="/vendor/fonts/instrument-sans/500.css">
+<link rel="stylesheet" href="/vendor/fonts/instrument-sans/600.css">
+<link rel="stylesheet" href="/vendor/fonts/jetbrains-mono/400.css">
+<link rel="stylesheet" href="/vendor/fonts/jetbrains-mono/500.css">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <canvas id="scene" aria-label="İstasyon haritası: her modül bir proje"></canvas>
+
+    <header id="topbar">
+      <div class="wordmark">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" fill="#000"/><rect x="6" y="6" width="12" height="12" fill="#0041ff"/><rect x="14" y="14" width="12" height="12" fill="#ff3d00"/></svg>
+        <span>Ecelon Station</span>
+        <span id="mode-badge" title="Sahte akış: Claude çağrılmıyor"></span>
+      </div>
+      <div class="top-actions">
+        <button id="usage-btn" class="usage" hidden title="Claude kullanım limitleri"></button>
+        <button id="btn-broadcast" class="btn ghost">Herkese gönder</button>
+        <button id="btn-add" class="btn primary">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+          Proje ekle
+        </button>
+      </div>
+    </header>
+
+    <div id="legend" aria-label="Durum renkleri">
+      <span><i class="dot st-idle"></i>Boşta</span>
+      <span><i class="dot st-thinking"></i>Düşünüyor</span>
+      <span><i class="dot st-tool"></i>Araç kullanıyor</span>
+      <span><i class="dot st-done"></i>Bitti</span>
+      <span><i class="dot st-error"></i>Hata</span>
+    </div>
+
+    <div id="mapctl" aria-label="Harita kontrolleri">
+      <button type="button" id="zoom-in" title="Yakınlaştır" aria-label="Yakınlaştır"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button>
+      <button type="button" id="zoom-out" title="Uzaklaştır" aria-label="Uzaklaştır"><svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg></button>
+      <button type="button" id="zoom-fit" title="Tüm istasyonu göster (ya da boş yere çift tıkla)" aria-label="Tüm istasyonu göster"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
+    </div>
+
+    <div id="empty-hint" hidden>
+      <p class="eh-title">İstasyon boş</p>
+      <p>Bir proje klasörü ekle; o projenin modülü ve ajanı gelsin.</p>
+      <button class="btn primary" data-action="add">Proje ekle</button>
+    </div>
+    <div id="tooltip" role="tooltip" hidden></div>
+  </main>
+
+  <aside id="panel">
+    <div id="resizer" role="separator" aria-orientation="vertical" aria-label="Paneli genişlet ya da daralt" tabindex="0"></div>
+    <section id="panel-empty">
+      <div class="list-head">
+        <h1>Mürettebat</h1>
+        <p>Bir modüle ya da isme tıkla, o ajanla konuş.</p>
+      </div>
+      <ul id="agent-list"></ul>
+    </section>
+
+    <section id="panel-agent" hidden>
+      <header class="agent-head">
+        <button id="btn-close" class="icon-btn" title="Mürettebata dön" aria-label="Mürettebata dön">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg>
+        </button>
+        <div id="a-portrait" class="portrait"></div>
+        <div class="agent-id">
+          <h2 id="a-name"></h2>
+          <p id="a-path" class="path"></p>
+          <span id="a-status" class="status st-idle">Boşta</span>
+        </div>
+        <div class="head-actions menu">
+          <button id="btn-new" class="hbtn" title="Ekranı temizler, ajan yeni bir konuşmaya başlar">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Yeni</span>
+          </button>
+          <button id="btn-history" class="hbtn" title="Önceki konuşmalar" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9"/><path d="M2.5 2.5v2.5H5M8 5v3.2l2 1.3"/></svg><span>Geçmiş</span>
+          </button>
+          <button id="menu-btn" class="hbtn icon-only" title="Diğer işlemler" aria-label="Diğer işlemler" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>
+          </button>
+          <div id="menu-pop" class="pop" role="menu" hidden>
+            <button type="button" id="btn-folder" role="menuitem">Klasörü Gezgin'de aç</button>
+            <button type="button" id="btn-remove" role="menuitem" class="danger">Ajanı istasyondan çıkar</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="chat-wrap">
+        <div id="chat" aria-live="polite"></div>
+        <button type="button" id="jump" hidden title="En alta in" aria-label="En alta in"><svg viewBox="0 0 16 16"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg></button>
+      </div>
+      <div id="queue" hidden></div>
+
+      <div id="activity" hidden>
+        <span class="pulse" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span id="act-text"></span>
+        <span id="act-time"></span>
+      </div>
+
+      <form id="prompt-form">
+        <div class="composer">
+          <div id="attach-list" hidden></div>
+          <textarea id="prompt" rows="2" placeholder="Bu ajandan ne istiyorsun?"></textarea>
+          <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+          <div class="cbar">
+            <button type="button" id="btn-attach" class="cb-icon" title="Görsel ekle (yapıştırabilir ya da sürükleyebilirsin)" aria-label="Görsel ekle">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 7.5 8 13a3.5 3.5 0 0 1-5-5l5.8-5.8a2.3 2.3 0 0 1 3.3 3.3L6.4 11.2a1.2 1.2 0 0 1-1.7-1.7L10 4.2"/></svg>
+            </button>
+            <button type="button" id="btn-mic" class="cb-icon" title="Sesle yaz" aria-label="Sesle yaz" aria-pressed="false">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>
+            </button>
+            <button type="button" id="model-btn" class="cb-pill" aria-haspopup="listbox" title="Model"><span id="model-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
+            <button type="button" id="effort-btn" class="cb-pill" aria-haspopup="listbox" title="Efor"><span id="effort-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
+            <button type="button" id="perm-btn" class="cb-pill" aria-haspopup="listbox" title="İzin"><span id="perm-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
+            <span class="cb-spacer"></span>
+            <span id="ctx" class="ctx" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="ctx-bg" cx="10" cy="10" r="7.5"/><circle id="ctx-arc" class="ctx-fg" cx="10" cy="10" r="7.5"/></svg><span id="ctx-pct"></span></span>
+            <button type="button" id="btn-stop" class="send stop" hidden title="Durdur" aria-label="Durdur">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>
+            </button>
+            <button type="submit" id="btn-send" class="send" title="Gönder" aria-label="Gönder">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>
+            </button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <div id="toasts" aria-live="polite"></div>
+  </aside>
+</div>
+
+<!-- model seçici (Claude sohbetindeki gibi) -->
+<div id="model-pop" class="pop model-pop" role="listbox" hidden></div>
+<div id="usage-pop" class="pop usage-pop" hidden></div>
+<div id="history-pop" class="pop history-pop" role="menu" hidden></div>
+<div id="mention-pop" class="pop mention-pop" role="listbox" hidden></div>
+
+<dialog id="dlg-add" aria-labelledby="add-title">
+  <form method="dialog" id="add-form">
+    <h3 id="add-title">Proje ekle</h3>
+    <p class="dlg-sub">Seçtiğin klasör için bir modül kurulur. Ajan yalnızca o klasörde çalışır.</p>
+
+    <button type="button" id="pick-folder" class="pick-big">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5Z"/></svg>
+      <span><b id="pick-title">Bilgisayardan klasör seç</b><small id="pick-sub">Gezgin penceresi açılır; hızlı erişimden seçebilirsin</small></span>
+    </button>
+
+    <label class="field"><span>Ad <em>boş bırakırsan klasör adı kullanılır</em></span>
+      <input id="add-name" placeholder="CAPYCLYSM">
+    </label>
+    <details class="manual">
+      <summary>Yolu elle yapıştır</summary>
+      <input id="add-cwd" placeholder="C:\Projeler\proje-adi">
+    </details>
+    <p class="dlg-note">Model, efor ve izni ajanı ekledikten sonra panelden seçebilirsin.</p>
+
+    <div class="err" id="add-err" role="alert"></div>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn ghost" formnovalidate>Vazgeç</button>
+      <button id="add-ok" class="btn primary" value="ok">Ajanı ekle</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-bc" aria-labelledby="bc-title">
+  <form method="dialog" id="bc-form">
+    <h3 id="bc-title">Herkese gönder</h3>
+    <p class="dlg-sub">Seçili ajanlar sırayla çalışır, aynı anda değil. Böylece kullanım limitin bir anda tükenmez.</p>
+    <div id="bc-agents"></div>
+    <label class="field"><span>Mesaj</span>
+      <textarea id="bc-text" rows="4" placeholder="Örnek: README'yi güncelle ve açık TODO'ları listele"></textarea>
+    </label>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn ghost" formnovalidate>Vazgeç</button>
+      <button id="bc-ok" class="btn primary" value="ok">Gönder</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-img" class="lightbox" aria-label="Görsel">
+  <form method="dialog"><button class="lb-close icon-btn" aria-label="Kapat"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></form>
+  <img id="lb-img" alt="">
+  <p id="lb-cap"></p>
+</dialog>
+
+<dialog id="dlg-confirm" aria-labelledby="cf-title">
+  <form method="dialog">
+    <h3 id="cf-title"></h3>
+    <p id="cf-body" class="dlg-sub"></p>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn ghost" id="cf-cancel">Vazgeç</button>
+      <button value="ok" class="btn primary" id="cf-ok"></button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
