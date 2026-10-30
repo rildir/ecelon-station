@@ -1,5 +1,5 @@
-' Ecelon Station baslatici: sunucuyu gizli baslatir (zaten calisiyorsa dokunmaz),
-' sonra Chrome/Edge'i adres cubugu olmayan bir uygulama penceresi olarak acar.
+' Ecelon Station launcher (Windows): starts the server hidden (leaves it alone if it is already running),
+' then opens Chrome/Edge as an app window without an address bar. Shortcuts: windows\install-shortcuts.bat
 Option Explicit
 Dim sh, fso, dir, url, i, browser, args
 Set sh = CreateObject("WScript.Shell")
@@ -16,12 +16,12 @@ If Not IsUp() Then
     If IsUp() Then Exit For
   Next
   If Not IsUp() Then
-    MsgBox "Ecelon Station baslatilamadi." & vbCrLf & "Ayrinti: " & dir & "\data\server.log" & vbCrLf & "Node.js kurulu mu? (node -v)", vbExclamation, "Ecelon Station"
+    MsgBox "Ecelon Station could not be started." & vbCrLf & "Details: " & dir & "\data\server.log" & vbCrLf & "Is Node.js installed? (node -v)", vbExclamation, "Ecelon Station"
     WScript.Quit 1
   End If
 End If
 
-' Windows acilisinda "--background" ile cagrilirsa yalnizca sunucuyu baslat, pencere acma
+' Called with "--background" at Windows startup: only start the server, do not open a window
 For Each args In WScript.Arguments
   If LCase(args) = "--background" Then WScript.Quit 0
 Next

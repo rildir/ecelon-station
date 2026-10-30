@@ -1,0 +1,14 @@
+{
+  "name": "aurora-mobile",
+  "version": "0.2.0",
+  "private": true,
+  "main": "src/App.js",
+  "scripts": {
+    "start": "expo start",
+    "test": "jest"
+  },
+  "dependencies": {
+    "expo": "~52.0.0",
+    "react-native": "0.76.5"
+  }
+}

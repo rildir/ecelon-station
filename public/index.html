@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en" data-i18n-pending>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#1b2038">
-<!-- fontlar yerelden (internet gerekmez) -->
+<!-- fonts served locally (no internet needed) -->
 <link rel="stylesheet" href="/vendor/fonts/bricolage-grotesque/500.css">
 <link rel="stylesheet" href="/vendor/fonts/bricolage-grotesque/700.css">
 <link rel="stylesheet" href="/vendor/fonts/bricolage-grotesque/800.css">
@@ -26,87 +26,112 @@
 <body>
 <div id="app">
   <main id="stage">
-    <canvas id="scene" aria-label="İstasyon haritası: her modül bir proje"></canvas>
+    <canvas id="scene" data-i18n-attr="aria-label" aria-label="Station map: every module is a project"></canvas>
 
     <header id="topbar">
       <div class="wordmark">
         <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" fill="#000"/><rect x="6" y="6" width="12" height="12" fill="#0041ff"/><rect x="14" y="14" width="12" height="12" fill="#ff3d00"/></svg>
-        <span>Ecelon Station</span>
-        <span id="mode-badge" title="Sahte akış: Claude çağrılmıyor"></span>
+        <span class="wm-name">Ecelon Station</span>
+        <span id="mode-badge" data-i18n-attr="title" title="Mock flow: Claude is not called"></span>
       </div>
       <div class="top-actions">
-        <button id="usage-btn" class="usage" hidden title="Claude kullanım limitleri"></button>
-        <button id="btn-broadcast" class="btn ghost">Herkese gönder</button>
+        <button id="usage-btn" class="usage" hidden data-i18n-attr="title" title="Claude usage limits"></button>
+        <button id="btn-lang" class="btn ghost icon-btn-top lang-btn" type="button" title="Language / Dil" aria-haspopup="listbox"></button>
+        <button id="btn-notify" class="btn ghost icon-btn-top" type="button" data-i18n-attr="title" title="Notifications" aria-pressed="false">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5h-11zM6.5 14a1.5 1.5 0 0 0 3 0"/></svg>
+        </button>
+        <button id="btn-library" class="btn ghost" data-i18n-attr="title" title="Document library: analysis documents, data dictionaries, notes">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4zM9.5 1.5V5H13M6.5 8.5h4M6.5 11h4"/></svg>
+          <span class="tb-l" data-i18n>Documents</span>
+        </button>
+        <button id="btn-broadcast" class="btn ghost" data-i18n-attr="title" title="Send the same message to all the projects you select"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7.5 14 2l-3.5 12-3-4.5z"/></svg><span class="tb-l" data-i18n>Send to all</span></button>
         <button id="btn-add" class="btn primary">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
-          Proje ekle
+          <span class="tb-l" data-i18n>Add project</span>
         </button>
       </div>
     </header>
 
-    <div id="legend" aria-label="Durum renkleri">
-      <span><i class="dot st-idle"></i>Boşta</span>
-      <span><i class="dot st-thinking"></i>Düşünüyor</span>
-      <span><i class="dot st-tool"></i>Araç kullanıyor</span>
-      <span><i class="dot st-done"></i>Bitti</span>
-      <span><i class="dot st-error"></i>Hata</span>
+    <div id="legend" data-i18n-attr="aria-label" aria-label="Status colors">
+      <span><i class="dot st-idle"></i><span data-i18n>Idle</span></span>
+      <span><i class="dot st-thinking"></i><span data-i18n>Thinking</span></span>
+      <span><i class="dot st-tool"></i><span data-i18n>Using a tool</span></span>
+      <span><i class="dot st-done"></i><span data-i18n>Done</span></span>
+      <span><i class="dot st-error"></i><span data-i18n>Error</span></span>
     </div>
 
-    <div id="mapctl" aria-label="Harita kontrolleri">
-      <button type="button" id="zoom-in" title="Yakınlaştır" aria-label="Yakınlaştır"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button>
-      <button type="button" id="zoom-out" title="Uzaklaştır" aria-label="Uzaklaştır"><svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg></button>
-      <button type="button" id="zoom-fit" title="Tüm istasyonu göster (ya da boş yere çift tıkla)" aria-label="Tüm istasyonu göster"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
+    <div id="mapctl" data-i18n-attr="aria-label" aria-label="Map controls">
+      <button type="button" id="zoom-in" data-i18n-attr="title,aria-label" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button>
+      <button type="button" id="zoom-out" data-i18n-attr="title,aria-label" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg></button>
+      <button type="button" id="zoom-fit" data-i18n-attr="title,aria-label" title="Show the whole station (or double-click an empty spot)" aria-label="Show the whole station"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
     </div>
 
     <div id="empty-hint" hidden>
-      <p class="eh-title">İstasyon boş</p>
-      <p>Bir proje klasörü ekle; o projenin modülü ve ajanı gelsin.</p>
-      <button class="btn primary" data-action="add">Proje ekle</button>
+      <p class="eh-title" data-i18n>The station is empty</p>
+      <p data-i18n>Add a project folder; its module and agent will appear.</p>
+      <button class="btn primary" data-action="add" data-i18n>Add project</button>
     </div>
     <div id="tooltip" role="tooltip" hidden></div>
   </main>
 
   <aside id="panel">
-    <div id="resizer" role="separator" aria-orientation="vertical" aria-label="Paneli genişlet ya da daralt" tabindex="0"></div>
+    <div id="resizer" role="separator" aria-orientation="vertical" data-i18n-attr="aria-label" aria-label="Widen or narrow the panel" tabindex="0"></div>
     <section id="panel-empty">
       <div class="list-head">
-        <h1>Mürettebat</h1>
-        <p>Bir modüle ya da isme tıkla, o ajanla konuş.</p>
+        <h1 data-i18n>Crew</h1>
+        <p data-i18n>Projects: click a room or a name to talk to that project's team.</p>
       </div>
+      <div id="cli-warn" class="cli-warn" role="alert" hidden></div>
       <ul id="agent-list"></ul>
+      <p class="list-hint"><span data-i18n>Drag to reorder the list (in 3D, hold a room and move it)</span> · <span data-i18n>right-click: shortcuts</span> · <kbd>Ctrl</kbd>+<kbd>K</kbd> <span data-i18n>quick switch</span></p>
     </section>
 
     <section id="panel-agent" hidden>
       <header class="agent-head">
-        <button id="btn-close" class="icon-btn" title="Mürettebata dön" aria-label="Mürettebata dön">
+        <button id="btn-close" class="icon-btn" data-i18n-attr="title,aria-label" title="Back to the crew" aria-label="Back to the crew">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg>
         </button>
         <div id="a-portrait" class="portrait"></div>
         <div class="agent-id">
           <h2 id="a-name"></h2>
           <p id="a-path" class="path"></p>
-          <span id="a-status" class="status st-idle">Boşta</span>
+          <div class="a-row"><span id="a-status" class="status st-idle" data-i18n>Idle</span><button type="button" id="linked-docs" class="a-linked" hidden></button></div>
         </div>
         <div class="head-actions menu">
-          <button id="btn-new" class="hbtn" title="Ekranı temizler, ajan yeni bir konuşmaya başlar">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Yeni</span>
+          <button id="btn-reqs" class="hbtn" data-i18n-attr="title" title="Scope: requirements from the analysis document and their status">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h6M3 8h6M3 11.5h4"/><path d="M10.5 11l1.4 1.4L14.5 10"/></svg><span data-i18n>Scope</span><em id="reqs-badge"></em>
           </button>
-          <button id="btn-history" class="hbtn" title="Önceki konuşmalar" aria-haspopup="menu" aria-expanded="false">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9"/><path d="M2.5 2.5v2.5H5M8 5v3.2l2 1.3"/></svg><span>Geçmiş</span>
+          <button id="btn-code" class="hbtn" data-i18n-attr="title" title="Code editor: files, search (Ctrl+E)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4 1.5 8l4 4M10.5 4l4 4-4 4"/></svg><span data-i18n>Code</span>
           </button>
-          <button id="menu-btn" class="hbtn icon-only" title="Diğer işlemler" aria-label="Diğer işlemler" aria-haspopup="menu" aria-expanded="false">
+          <button id="btn-run" class="hbtn" data-i18n-attr="title" title="Run: commands, output, terminal and Problems (Ctrl+J)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"/></svg><span data-i18n>Run</span><em id="run-badge"></em>
+          </button>
+          <button id="btn-git" class="hbtn" data-i18n-attr="title" title="Git: changes, commit, push">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6" style="fill:none;stroke:currentColor;stroke-width:1.6"/><circle cx="4.5" cy="12.5" r="1.6" style="fill:none;stroke:currentColor;stroke-width:1.6"/><circle cx="11.5" cy="5" r="1.6" style="fill:none;stroke:currentColor;stroke-width:1.6"/><path d="M4.5 5.1v5.8M11.5 6.6c0 3-7 2-7 4.3"/></svg><span>Git</span><em id="git-badge"></em>
+          </button>
+          <button id="btn-new" class="hbtn" data-i18n-attr="title" title="Clears the screen; the agent starts a new conversation">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span data-i18n>New</span>
+          </button>
+          <button id="btn-history" class="hbtn" data-i18n-attr="title" title="Previous conversations" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9"/><path d="M2.5 2.5v2.5H5M8 5v3.2l2 1.3"/></svg><span data-i18n>History</span>
+          </button>
+          <button id="menu-btn" class="hbtn icon-only" data-i18n-attr="title,aria-label" title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">
             <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>
           </button>
           <div id="menu-pop" class="pop" role="menu" hidden>
-            <button type="button" id="btn-folder" role="menuitem">Klasörü Gezgin'de aç</button>
-            <button type="button" id="btn-remove" role="menuitem" class="danger">Ajanı istasyondan çıkar</button>
+            <button type="button" id="btn-folder" role="menuitem" data-i18n>Open project folder</button>
+            <button type="button" id="btn-links" role="menuitem" data-i18n>Linked projects…</button>
+            <button type="button" id="btn-remove-role" role="menuitem" class="danger" hidden data-i18n>Remove this role from the team</button>
+            <button type="button" id="btn-remove" role="menuitem" class="danger" data-i18n>Remove project from the station</button>
           </div>
         </div>
       </header>
+      <nav id="team-tabs" class="team-tabs" data-i18n-attr="aria-label" aria-label="Team"></nav>
 
       <div class="chat-wrap">
         <div id="chat" aria-live="polite"></div>
-        <button type="button" id="jump" hidden title="En alta in" aria-label="En alta in"><svg viewBox="0 0 16 16"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg></button>
+        <button type="button" id="jump" hidden data-i18n-attr="title,aria-label" title="Jump to the bottom" aria-label="Jump to the bottom"><svg viewBox="0 0 16 16"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg></button>
       </div>
       <div id="queue" hidden></div>
 
@@ -117,38 +142,201 @@
       </div>
 
       <form id="prompt-form">
+        <div id="quick" class="quick" data-i18n-attr="aria-label" aria-label="Quick commands"></div>
         <div class="composer">
           <div id="attach-list" hidden></div>
-          <textarea id="prompt" rows="2" placeholder="Bu ajandan ne istiyorsun?"></textarea>
-          <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+          <textarea id="prompt" rows="2" data-i18n-attr="placeholder" placeholder="What do you want from this agent?  @ file · # document"></textarea>
+          <input type="file" id="file-input" multiple hidden>
           <div class="cbar">
-            <button type="button" id="btn-attach" class="cb-icon" title="Görsel ekle (yapıştırabilir ya da sürükleyebilirsin)" aria-label="Görsel ekle">
+            <button type="button" id="btn-attach" class="cb-icon" data-i18n-attr="title,aria-label" title="Attach: a file or a document from the library" aria-label="Attach" aria-haspopup="menu">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 7.5 8 13a3.5 3.5 0 0 1-5-5l5.8-5.8a2.3 2.3 0 0 1 3.3 3.3L6.4 11.2a1.2 1.2 0 0 1-1.7-1.7L10 4.2"/></svg>
             </button>
-            <button type="button" id="btn-mic" class="cb-icon" title="Sesle yaz" aria-label="Sesle yaz" aria-pressed="false">
+            <button type="button" id="btn-mic" class="cb-icon" data-i18n-attr="title,aria-label" title="Dictate" aria-label="Dictate" aria-pressed="false">
               <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>
             </button>
-            <button type="button" id="model-btn" class="cb-pill" aria-haspopup="listbox" title="Model"><span id="model-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
-            <button type="button" id="effort-btn" class="cb-pill" aria-haspopup="listbox" title="Efor"><span id="effort-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
-            <button type="button" id="perm-btn" class="cb-pill" aria-haspopup="listbox" title="İzin"><span id="perm-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
+            <button type="button" id="model-btn" class="cb-pill" aria-haspopup="listbox" data-i18n-attr="title" title="Model"><span id="model-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
+            <button type="button" id="effort-btn" class="cb-pill" aria-haspopup="listbox" data-i18n-attr="title" title="Effort"><span id="effort-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
+            <button type="button" id="perm-btn" class="cb-pill" aria-haspopup="listbox" data-i18n-attr="title" title="Permission"><span id="perm-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
             <span class="cb-spacer"></span>
             <span id="ctx" class="ctx" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="ctx-bg" cx="10" cy="10" r="7.5"/><circle id="ctx-arc" class="ctx-fg" cx="10" cy="10" r="7.5"/></svg><span id="ctx-pct"></span></span>
-            <button type="button" id="btn-stop" class="send stop" hidden title="Durdur" aria-label="Durdur">
+            <button type="button" id="btn-stop" class="send stop" hidden data-i18n-attr="title,aria-label" title="Stop" aria-label="Stop">
               <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>
             </button>
-            <button type="submit" id="btn-send" class="send" title="Gönder" aria-label="Gönder">
+            <button type="submit" id="btn-send" class="send" data-i18n-attr="title,aria-label" title="Send" aria-label="Send">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>
             </button>
           </div>
         </div>
       </form>
     </section>
-
-    <div id="toasts" aria-live="polite"></div>
   </aside>
 </div>
 
-<!-- model seçici (Claude sohbetindeki gibi) -->
+<!-- document library (full screen) -->
+<section id="library" hidden data-i18n-attr="aria-label" aria-label="Document library">
+  <header class="lib-top">
+    <button type="button" id="lib-close" class="icon-btn" data-i18n-attr="title,aria-label" title="Back to the station (Esc)" aria-label="Back to the station"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+    <div class="lib-title"><h2 data-i18n>Document Library</h2><span id="lib-sum"></span></div>
+    <label class="lib-search"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" style="fill:none;stroke:currentColor;stroke-width:2"/><path d="m10.5 10.5 3 3"/></svg>
+      <input id="lib-q" type="search" data-i18n-attr="placeholder,aria-label" placeholder="Search by name, tag or content" autocomplete="off" aria-label="Search documents"><kbd>Ctrl K</kbd></label>
+    <button type="button" id="lib-upload" class="btn primary"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11V2.5M4.5 6 8 2.5 11.5 6M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/></svg><span data-i18n>Upload document</span></button>
+    <input type="file" id="lib-file" multiple hidden>
+  </header>
+  <div class="lib-body">
+    <nav class="lib-side" data-i18n-attr="aria-label" aria-label="Collections"></nav>
+    <section class="lib-list">
+      <div class="ll-head">
+        <div class="ll-title"><b id="lib-ltitle"></b><span id="lib-count"></span></div>
+        <select id="lib-sort" data-i18n-attr="aria-label" aria-label="Sort">
+          <option value="updated" data-i18n>Last updated</option><option value="created" data-i18n>Last added</option>
+          <option value="name" data-i18n>By name</option><option value="kind" data-i18n>By type</option><option value="size" data-i18n>By size</option>
+        </select>
+      </div>
+      <div id="lib-kinds" class="ll-kinds"></div>
+      <div id="lib-items" role="listbox" data-i18n-attr="aria-label" aria-label="Documents"></div>
+      <div id="lib-uploads"></div>
+    </section>
+    <section id="lib-view" class="lib-view"></section>
+  </div>
+  <div class="lib-drop" aria-hidden="true"><div><svg viewBox="0 0 16 16"><path d="M8 11V2.5M4.5 6 8 2.5 11.5 6M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/></svg><b data-i18n>Drop it, I will add it to the library</b><small data-i18n>Drop it on a collection to add it there</small></div></div>
+</section>
+
+<!-- quick switch (Ctrl+K) -->
+<dialog id="dlg-switch" class="switcher" data-i18n-attr="aria-label" aria-label="Quick switch">
+  <input id="sw-q" type="search" data-i18n-attr="placeholder" placeholder="Search projects or commands…" autocomplete="off">
+  <ul id="sw-list" role="listbox"></ul>
+  <p class="sw-foot"><kbd>↑</kbd><kbd>↓</kbd> <span data-i18n>select</span> · <kbd>Enter</kbd> <span data-i18n>open</span> · <kbd>Ctrl</kbd>+<kbd>1…9</kbd> <span data-i18n>jump directly</span></p>
+</dialog>
+
+<dialog id="dlg-qopen" class="switcher" data-i18n-attr="aria-label" aria-label="Open file">
+  <input id="qo-q" type="search" data-i18n-attr="placeholder" placeholder="Type a file name…" autocomplete="off">
+  <ul id="qo-list" class="qo-list" role="listbox"></ul>
+</dialog>
+
+<!-- code editor (full screen) -->
+<section id="editor" class="overlay" hidden data-i18n-attr="aria-label" aria-label="Code editor">
+  <header class="lib-top ed-top">
+    <button type="button" class="icon-btn" data-ed="close" data-i18n-attr="title,aria-label" title="Back (Esc)" aria-label="Back"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+    <div class="lib-title"><h2><b data-i18n>Code</b> · <span id="ed-title"></span></h2></div>
+    <button type="button" class="ed-qopen" data-ed="qopen"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" style="fill:none;stroke:currentColor;stroke-width:2"/><path d="m10.5 10.5 3 3"/></svg><span data-i18n>Find file</span><kbd>Ctrl</kbd><kbd>P</kbd></button>
+    <div class="rq-actions"><button type="button" class="btn ghost sm" data-ed="saveall" title="Ctrl+Shift+S" data-i18n>Save all</button></div>
+  </header>
+  <div class="ed-body">
+    <aside class="ed-side">
+      <div id="ed-sidetabs" class="ed-sidetabs"></div>
+      <div id="ed-treebar" class="ed-treebar">
+        <button type="button" data-ed="newfile" data-i18n-attr="title" title="New file"><svg viewBox="0 0 16 16"><path d="M9 1.5H4A1.5 1.5 0 0 0 2.5 3v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V6Z"/><path d="M9 1.5V6h4.5M8 8v4M6 10h4"/></svg></button>
+        <button type="button" data-ed="newdir" data-i18n-attr="title" title="New folder"><svg viewBox="0 0 16 16"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5Z"/><path d="M8 7v4M6 9h4"/></svg></button>
+        <button type="button" data-ed="refresh" data-i18n-attr="title" title="Refresh"><svg viewBox="0 0 16 16"><path d="M13 3v4H9"/><path d="M13 7a5.5 5.5 0 1 0-1.4 4.7"/></svg></button>
+        <button type="button" data-ed="collapse" data-i18n-attr="title" title="Collapse all"><svg viewBox="0 0 16 16"><path d="M4 6l4-3 4 3M4 13l4-3 4 3"/></svg></button>
+      </div>
+      <div id="ed-tree" class="ed-tree"></div>
+      <div id="ed-search" class="ed-search" hidden>
+        <div class="es-box"><input id="es-q" type="search" data-i18n-attr="placeholder" placeholder="Search" autocomplete="off" spellcheck="false">
+          <button type="button" id="es-cs" data-i18n-attr="title" title="Match case" aria-pressed="false">Aa</button><button type="button" id="es-word" data-i18n-attr="title" title="Whole word" aria-pressed="false"><u>ab</u></button><button type="button" id="es-regex" data-i18n-attr="title" title="Regular expression" aria-pressed="false">.*</button></div>
+        <input id="es-inc" type="text" data-i18n-attr="placeholder" placeholder="Include: e.g. src/**, *.ts" autocomplete="off" spellcheck="false">
+        <input id="es-exc" type="text" data-i18n-attr="placeholder" placeholder="Exclude: e.g. *.min.js, test/**" autocomplete="off" spellcheck="false">
+        <p id="es-sum" class="es-sum"></p>
+        <div id="es-results" class="es-results"></div>
+      </div>
+    </aside>
+    <main id="ed-main" class="ed-main">
+      <div id="ed-tabs" class="ed-tabs"></div>
+      <div id="ed-banner" class="ed-banner" hidden></div>
+      <div class="ed-stage">
+        <div id="ed-monaco" class="ed-monaco"></div>
+        <div id="ed-other" class="ed-other" hidden></div>
+        <div id="ed-diff" class="ed-diff" hidden><div id="ed-diff-head" class="ed-banner"></div><div id="ed-diff-host" class="ed-diff-host"></div></div>
+      </div>
+      <footer id="ed-status" class="ed-status"></footer>
+    </main>
+  </div>
+</section>
+
+<!-- run panel (full screen) -->
+<section id="runs" class="overlay" hidden data-i18n-attr="aria-label" aria-label="Run">
+  <header class="lib-top rn-top">
+    <button type="button" class="icon-btn" data-close data-i18n-attr="title,aria-label" title="Back (Esc)" aria-label="Back"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+    <div class="lib-title"><h2><b data-i18n>Run</b> · <span id="rn-title"></span></h2></div>
+    <div id="rn-tabs" class="rq-tabs rn-tabs" role="tablist"></div>
+    <button type="button" id="rn-dock" class="btn ghost sm" data-dock data-i18n>Dock at the bottom</button>
+  </header>
+  <div class="rn-body">
+    <aside id="rn-cmds" class="rn-side"></aside>
+    <main class="rn-main">
+      <div id="rn-outwrap" class="rn-outwrap">
+        <div id="rn-head" class="rn-head"></div>
+        <div id="rn-out" class="rn-out" role="log" aria-live="off"></div>
+        <label class="rn-inbar"><span id="rn-mode">$</span><input id="rn-input" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <div id="rn-probs" class="rn-probs" hidden></div>
+    </main>
+  </div>
+</section>
+
+<section id="reqs" class="overlay" hidden data-i18n-attr="aria-label" aria-label="Scope">
+  <header class="lib-top">
+    <button type="button" class="icon-btn" data-act="close" data-i18n-attr="title,aria-label" title="Back (Esc)" aria-label="Back"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+    <div class="lib-title"><h2><b data-i18n>Scope</b> · <span id="rq-title"></span></h2><span id="rq-sum"></span></div>
+    <label class="lib-search"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" style="fill:none;stroke:currentColor;stroke-width:2"/><path d="m10.5 10.5 3 3"/></svg>
+      <input id="rq-q" type="search" data-i18n-attr="placeholder,aria-label" placeholder="Search requirements, codes, evidence or notes" autocomplete="off" aria-label="Search requirements"></label>
+    <div class="rq-actions">
+      <span id="rq-analyst" class="rq-analyst"></span>
+      <button type="button" class="btn ghost sm" data-act="extract" data-i18n-attr="title" title="The analyst extracts the requirements list from the linked documents (updates it if one exists)" data-i18n>Extract from document</button>
+      <button type="button" class="btn ghost sm" data-act="compare" data-i18n-attr="title" title="The analyst compares every item with the code and updates its work status" data-i18n>Compare with code</button>
+      <button type="button" class="btn ghost sm" data-act="verify" data-i18n-attr="title" title="The tester actually tries the unverified items and verifies them with evidence" data-i18n>Verify with the tester</button>
+      <button type="button" class="btn ghost sm" data-act="review" data-i18n-attr="title" title="The reviewer reads the document independently of the list and finds requirements missing from it" data-i18n>Second opinion</button>
+      <button type="button" class="btn ghost sm" data-act="add" data-i18n>+ Item</button>
+      <button type="button" class="btn primary sm" data-act="export" data-i18n-attr="title" title="Download as a Markdown report" data-i18n>Export</button>
+    </div>
+  </header>
+  <div class="rq-body">
+    <div id="rq-tabs" class="rq-tabs" role="tablist"></div>
+    <div class="rq-progress"><div id="rq-alert" class="rq-alert" hidden></div><div id="rq-alert2" class="rq-alert" hidden></div><div id="rq-bar" class="rq-bar"></div><div id="rq-chips" class="ll-kinds"></div></div>
+    <div id="rq-list" class="rq-list"></div>
+  </div>
+</section>
+
+<!-- git panel (full screen) -->
+<section id="git" class="overlay" hidden aria-label="Git">
+  <header class="lib-top gt-top">
+    <button type="button" class="icon-btn" data-g="close" data-i18n-attr="title,aria-label" title="Back (Esc)" aria-label="Back"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+    <div class="lib-title"><h2>Git · <span id="gt-title"></span></h2><span id="gt-branch" class="gt-branch"></span></div>
+    <span id="gt-op" class="gt-op"></span>
+    <div class="rq-actions">
+      <button type="button" class="btn ghost sm" data-g="fetch" data-i18n-attr="title" title="Check the remote for new commits">Fetch</button>
+      <button type="button" class="btn ghost sm" data-g="pull" data-i18n-attr="title" title="Pull the commits from the remote (fast-forward only)">Pull</button>
+      <button type="button" class="btn primary sm" data-g="push" data-i18n-attr="title" title="Push the commits to the remote">Push</button>
+    </div>
+  </header>
+  <div class="gt-body">
+    <aside class="gt-side">
+      <div class="gt-box">
+        <p id="gt-busy" class="gt-busy" hidden data-i18n>An agent in the team is working; files may be changing.</p>
+        <textarea id="gt-msg" rows="3" data-i18n-attr="placeholder" placeholder="Commit message (Ctrl+Enter to commit)"></textarea>
+        <div class="gt-row"><button type="button" id="gt-suggest" class="btn ghost sm" data-i18n-attr="title" title="Look at the changes and suggest a message (adds the related Scope code)" data-i18n>Suggest message</button><button type="button" id="gt-commit" class="btn primary sm">Commit</button></div>
+      </div>
+      <div id="gt-left" class="gt-left"></div>
+    </aside>
+    <section id="gt-diff" class="gt-diff"></section>
+  </div>
+</section>
+
+<dialog id="dlg-links" aria-labelledby="lk-title">
+  <form method="dialog" id="lk-form">
+    <h3 id="lk-title" data-i18n>Linked projects</h3>
+    <p class="dlg-sub" data-i18n>Link projects that affect each other (e.g. ERP Backend ↔ ERP Frontend). When a lead changes an API or something shared, it notifies the other project's lead itself; the reply lands in its chat as a card.</p>
+    <div id="lk-list" class="bc-agents"></div>
+    <div class="dlg-actions rev">
+      <button value="ok" class="btn primary" data-i18n>Save</button>
+      <button value="cancel" class="btn ghost" formnovalidate data-i18n>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+
+<!-- model picker (like in Claude chat) -->
 <div id="model-pop" class="pop model-pop" role="listbox" hidden></div>
 <div id="usage-pop" class="pop usage-pop" hidden></div>
 <div id="history-pop" class="pop history-pop" role="menu" hidden></div>
@@ -156,50 +344,69 @@
 
 <dialog id="dlg-add" aria-labelledby="add-title">
   <form method="dialog" id="add-form">
-    <h3 id="add-title">Proje ekle</h3>
-    <p class="dlg-sub">Seçtiğin klasör için bir modül kurulur. Ajan yalnızca o klasörde çalışır.</p>
+    <h3 id="add-title" data-i18n>Add project</h3>
+    <p class="dlg-sub" data-i18n>A room and a team are set up for the folder you choose: developer (lead), analyst, tester, reviewer. The team works only in that folder.</p>
 
     <button type="button" id="pick-folder" class="pick-big">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5Z"/></svg>
-      <span><b id="pick-title">Bilgisayardan klasör seç</b><small id="pick-sub">Gezgin penceresi açılır; hızlı erişimden seçebilirsin</small></span>
+      <span><b id="pick-title" data-i18n>Choose a folder from your computer</b><small id="pick-sub" data-i18n>A folder dialog opens; you can pick from quick access</small></span>
     </button>
 
-    <label class="field"><span>Ad <em>boş bırakırsan klasör adı kullanılır</em></span>
-      <input id="add-name" placeholder="CAPYCLYSM">
+    <label class="field"><span><span data-i18n>Name</span> <em data-i18n>leave empty to use the folder name</em></span>
+      <input id="add-name" data-i18n-attr="placeholder" placeholder="e.g. ERP Backend">
     </label>
     <details class="manual">
-      <summary>Yolu elle yapıştır</summary>
-      <input id="add-cwd" placeholder="C:\Projeler\proje-adi">
+      <summary data-i18n>Paste the path by hand</summary>
+      <input id="add-cwd" data-i18n-attr="placeholder" placeholder="C:\Projects\project-name">
     </details>
-    <p class="dlg-note">Model, efor ve izni ajanı ekledikten sonra panelden seçebilirsin.</p>
+    <p class="dlg-note" data-i18n>You can change the model, effort and permission below the message box after adding the project.</p>
 
     <div class="err" id="add-err" role="alert"></div>
-    <div class="dlg-actions">
-      <button value="cancel" class="btn ghost" formnovalidate>Vazgeç</button>
-      <button id="add-ok" class="btn primary" value="ok">Ajanı ekle</button>
+    <div class="dlg-actions rev">
+      <button id="add-ok" class="btn primary" value="ok" data-i18n>Add the project</button>
+      <button value="cancel" class="btn ghost" formnovalidate data-i18n>Cancel</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="dlg-bc" aria-labelledby="bc-title">
   <form method="dialog" id="bc-form">
-    <h3 id="bc-title">Herkese gönder</h3>
-    <p class="dlg-sub">Seçili ajanlar sırayla çalışır, aynı anda değil. Böylece kullanım limitin bir anda tükenmez.</p>
+    <h3 id="bc-title" data-i18n>Send to all</h3>
+    <p class="dlg-sub" data-i18n>Send the same message to the agents you select. The settings apply only to this message; the agents' own settings do not change.</p>
+    <div class="bc-head"><span id="bc-count"></span><button type="button" class="linkish" id="bc-all" data-i18n>Deselect all</button></div>
     <div id="bc-agents"></div>
-    <label class="field"><span>Mesaj</span>
-      <textarea id="bc-text" rows="4" placeholder="Örnek: README'yi güncelle ve açık TODO'ları listele"></textarea>
+    <div class="bc-opts">
+      <label class="field"><span data-i18n>Model</span><select id="bc-model"></select></label>
+      <label class="field"><span data-i18n>Effort</span><select id="bc-effort"></select></label>
+      <label class="field"><span data-i18n>Permission</span><select id="bc-perm"></select></label>
+    </div>
+    <label class="check"><input type="checkbox" id="bc-new" checked><span><b data-i18n>Open a new conversation for every agent</b><small data-i18n>Does not disturb ongoing conversations; recommended for question-style messages.</small></span></label>
+    <label class="check"><input type="checkbox" id="bc-par"><span><b data-i18n>Run all at the same time</b><small data-i18n>Finishes faster but uses up your usage limit faster. When off, they run one by one.</small></span></label>
+    <label class="field"><span data-i18n>Message</span>
+      <textarea id="bc-text" rows="4" data-i18n-attr="placeholder" placeholder="Example: update the README and list the open TODOs"></textarea>
     </label>
-    <div class="dlg-actions">
-      <button value="cancel" class="btn ghost" formnovalidate>Vazgeç</button>
-      <button id="bc-ok" class="btn primary" value="ok">Gönder</button>
+    <div class="dlg-actions rev">
+      <button id="bc-ok" class="btn primary" value="ok" data-i18n>Send</button>
+      <button value="cancel" class="btn ghost" formnovalidate data-i18n>Cancel</button>
     </div>
   </form>
 </dialog>
 
-<dialog id="dlg-img" class="lightbox" aria-label="Görsel">
-  <form method="dialog"><button class="lb-close icon-btn" aria-label="Kapat"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></form>
+<dialog id="dlg-img" class="lightbox" data-i18n-attr="aria-label" aria-label="Image">
+  <form method="dialog"><button class="lb-close icon-btn" data-i18n-attr="aria-label" aria-label="Close"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></form>
   <img id="lb-img" alt="">
   <p id="lb-cap"></p>
+</dialog>
+
+<dialog id="dlg-prompt" aria-labelledby="pr-title">
+  <form method="dialog">
+    <h3 id="pr-title"></h3>
+    <input id="pr-input" maxlength="1000" list="pr-list" autocomplete="off"><datalist id="pr-list"></datalist>
+    <div class="dlg-actions rev">
+      <button value="ok" class="btn primary" id="pr-ok" data-i18n>OK</button>
+      <button value="cancel" class="btn ghost" formnovalidate data-i18n>Cancel</button>
+    </div>
+  </form>
 </dialog>
 
 <dialog id="dlg-confirm" aria-labelledby="cf-title">
@@ -207,7 +414,8 @@
     <h3 id="cf-title"></h3>
     <p id="cf-body" class="dlg-sub"></p>
     <div class="dlg-actions">
-      <button value="cancel" class="btn ghost" id="cf-cancel">Vazgeç</button>
+      <button value="cancel" class="btn ghost" id="cf-cancel" data-i18n>Cancel</button>
+      <button value="alt" class="btn ghost" id="cf-alt" hidden></button>
       <button value="ok" class="btn primary" id="cf-ok"></button>
     </div>
   </form>
