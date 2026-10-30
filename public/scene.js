@@ -27,7 +27,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
   let dpr = DPR_MAX; renderer.setPixelRatio(dpr);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap; // PCF instead of soft shadows: looks almost the same, costs far less
-  renderer.shadowMap.autoUpdate = false; // the shadow map is updated at intervals, not every frame (see frame)
+  // shadow pass runs every frame: with three >= 0.18x the PCF sampler is invalid on frames where the pass is skipped (GL_INVALID_OPERATION)
   renderer.localClippingEnabled = true;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.1;
@@ -48,7 +48,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
     cam.lookAt(target); cam.updateProjectionMatrix();
   }
   // The canvas is cleared when its size changes; unless we redraw at the same time one frame shows empty (flicker)
-  new ResizeObserver(() => { resize(); if (kit.ready) { renderer.shadowMap.needsUpdate = true; renderer.render(scene, cam); } slowFrames = 0; resizingUntil = performance.now() + 400; }).observe(canvas);
+  new ResizeObserver(() => { resize(); if (kit.ready) renderer.render(scene, cam); slowFrames = 0; resizingUntil = performance.now() + 400; }).observe(canvas);
 
   // ---- light (only two lights, fixed)
   scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x30364a, 1.6));
@@ -682,7 +682,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
 
   // ---- animation loop (no object creation per frame)
   const dV = new THREE.Vector3(), goalV = new THREE.Vector3();
-  const clock = new THREE.Clock();
+  const timer = new THREE.Timer();
   function adaptResolution(dt, target) {
     if (performance.now() < resizingUntil || !document.hasFocus()) return; // do not measure while the panel is being dragged / in the background
     // if the frame time clearly exceeds the target 30 times lower the resolution; raise it again after a long calm stretch
@@ -693,7 +693,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
   let paused = false;
   // Frame rate: 60 during interaction (dragging, camera, mouse over); 30 when calm; 10 when the window is in the background.
   // Drawing every frame while the scene was calm ate into the UI's (chat, editor) share.
-  let lastDraw = 0, shadowTick = 0, hot = 0;
+  let lastDraw = 0, hot = 0;
   const poke = () => { hot = performance.now() + 1500; };
   for (const e of ["pointermove", "pointerdown", "wheel"]) canvas.addEventListener(e, poke, { passive: true });
   let frameErrs = 0;
@@ -708,7 +708,8 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
     const fps = !document.hasFocus() ? 10 : busy ? 60 : 30;
     if (nowT - lastDraw < 1000 / fps - 2) return;
     lastDraw = nowT;
-    const dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
+    timer.update();
+    const dt = Math.min(timer.getDelta(), 0.1), t = timer.getElapsed();
     adaptResolution(dt, 1 / fps);
     if (hoverQueued) { const ev = hoverQueued; hoverQueued = null; const id = pick(ev); onHover(id, ev.clientX, ev.clientY); }
     if (camGoal.target || camGoal.zoom) {
@@ -774,7 +775,6 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
         u.leds.instanceColor.needsUpdate = true;
       }
     }
-    if (++shadowTick % 3 === 0 || busy) renderer.shadowMap.needsUpdate = true; // shadows ~10-20 Hz
     renderer.render(scene, cam);
   }
   resize(); requestAnimationFrame(frame);
@@ -787,7 +787,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
     setActivity(id, text) { activities.set(id, text); moduleOf(id)?.userData.members.get(id)?.bubble.set(text); },
     select(id) { selectedId = id; updateSelection(); },
     // stop drawing while a full-screen view (document library) covers the scene
-    pause(on) { if (on === paused) return; paused = on; if (!on) { clock.getDelta(); requestAnimationFrame(frame); } },
+    pause(on) { if (on === paused) return; paused = on; if (!on) { timer.update(); requestAnimationFrame(frame); } },
     focus: focusAgent, fit: () => fitAll(true),
     zoomIn: () => { camGoal.zoom = clampZoom((camGoal.zoom || zoom) / 1.3); }, zoomOut: () => { camGoal.zoom = clampZoom((camGoal.zoom || zoom) * 1.3); },
     stats: () => ({ dpr, ...renderer.info.render, programs: renderer.info.programs?.length, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures }),
