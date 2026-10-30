@@ -1,0 +1,3 @@
+Furniture Kit (2.0) by Kenney (www.kenney.nl)
+License: Creative Commons Zero, CC0 — http://creativecommons.org/publicdomain/zero/1.0/
+Modeller orijinal paketten GLB biçimine dönüştürüldü (düz renkli malzemeler, flat normaller); renkleri istasyonda projeye göre yeniden boyanır.

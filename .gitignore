@@ -1,22 +1,44 @@
-# bağımlılıklar
+# dependencies
 node_modules/
 
-# yerel ve özel veriler: ajan listesi, yerel yollar, sohbetler, yüklenen görseller, kullanım bilgisi
+# local and private data: project list (local paths), chats, uploaded images, usage, document library
 data/
 logs/
 *.log
 
-# ortam / gizli ayarlar
+# environment / secrets
 .env
 .env.*
 
-# indirilmiş ham varlık paketleri (kullanılanlar public/assets içinde)
+# downloaded raw asset packs (the models in use live in public/assets)
 kenney_*.zip
 _kenney/
 
-# işletim sistemi / editör
+# OS / editor
 .DS_Store
 Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# documents and secret material never go into the repository (the document library is under data/ anyway)
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.csv
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+id_rsa*
+*.sqlite
+*.db
+secrets*
+credentials*
+
+# test artefacts
+test-results/
+playwright-report/

@@ -1,23 +1,70 @@
 {
   "name": "ecelon-station",
   "version": "0.1.0",
-  "description": "Projelerini izometrik bir uzay istasyonunda modüllere dönüştüren, her modülde bir Claude Code ajanı çalıştıran yerel kontrol odası.",
+  "description": "A control room for Claude Code agent teams: every project is a room in an isometric office, every role a character.",
+  "keywords": [
+    "claude-code",
+    "claude",
+    "agents",
+    "multi-agent",
+    "ai",
+    "developer-tools",
+    "dashboard",
+    "isometric",
+    "requirements",
+    "traceability"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rildir/ecelon-station"
+  },
+  "homepage": "https://github.com/rildir/ecelon-station#readme",
   "type": "module",
   "main": "server/index.js",
+  "bin": {
+    "ecelon-station": "bin/ecelon-station.js"
+  },
+  "files": [
+    "bin",
+    "server",
+    "public",
+    "demo",
+    "docs/i18n.md",
+    "scripts",
+    "README.md",
+    "README.tr.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "start": "node --watch server/index.js",
-    "dev": "MOCK=1 node server/index.js",
-    "dev:win": "set MOCK=1&& node server/index.js",
-    "start:once": "node server/index.js"
+    "start": "node bin/ecelon-station.js",
+    "demo": "node bin/ecelon-station.js --demo",
+    "dev": "node bin/ecelon-station.js --watch",
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "lint": "eslint . && node scripts/i18n-check.mjs --strict",
+    "prepublishOnly": "npm run lint && npm test",
+    "dev:demo": "node bin/ecelon-station.js --demo --watch"
   },
   "dependencies": {
     "@fontsource/bricolage-grotesque": "^5.3.0",
     "@fontsource/instrument-sans": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "express": "^4.21.2",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "monaco-editor": "0.52.2",
     "three": "0.170.0",
     "ws": "^8.18.0"
   },
-  "license": "MIT",
-  "private": true
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^17.13.0"
+  },
+  "bugs": {
+    "url": "https://github.com/rildir/ecelon-station/issues"
+  }
 }
