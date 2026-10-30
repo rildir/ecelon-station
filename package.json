@@ -43,7 +43,7 @@
     "start": "node bin/ecelon-station.js",
     "demo": "node bin/ecelon-station.js --demo",
     "dev": "node bin/ecelon-station.js --watch",
-    "test": "node --test \"tests/**/*.test.mjs\"",
+    "test": "node scripts/run-tests.mjs",
     "lint": "eslint . && node scripts/i18n-check.mjs --strict",
     "prepublishOnly": "npm run lint && npm test",
     "dev:demo": "node bin/ecelon-station.js --demo --watch"
