@@ -62,7 +62,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "eslint": "^10.13.0",
-    "globals": "^17.13.0"
+    "globals": "^17.14.0"
   },
   "bugs": {
     "url": "https://github.com/rildir/ecelon-station/issues"
