@@ -40,6 +40,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) { console.error(`Invali
 if (val("--lang") && !["en", "tr"].includes(val("--lang"))) { console.error(`Unsupported language: ${val("--lang")}. Available: en, tr.`); process.exit(1); }
 const env = { ...process.env, PORT: String(port) };
 if (has("--demo")) { env.MOCK = "1"; env.ECELON_DEMO = "1"; }
+if (has("--watch")) env.ECELON_DEV = "1"; // dev mode: the browser reloads itself when public/ changes
 if (val("--lang")) env.ECELON_LANG = val("--lang");
 if (val("--data")) env.ECELON_DATA = path.resolve(val("--data"));
 

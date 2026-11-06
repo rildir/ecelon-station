@@ -12,6 +12,7 @@ import * as cp from "./checkpoint.js";
 import * as reqs from "./requirements.js";
 import * as gp from "./gitpanel.js";
 import * as cov from "./coverage.js";
+import * as tasks from "./tasks.js";
 import * as fsx from "./files.js";
 import * as runs from "./runs.js";
 import { listAgents, getAgent, addAgent, addMember, teamOf, ensureFullTeams, updateAgent, removeAgent, reorderAgents, MODELS, EFFORTS, PERMISSIONS } from "./agents.js";
@@ -111,12 +112,37 @@ function readLog(agentId, limit = 400, convId) {
   if (!convId) { const a = getAgent(agentId); if (!a) return []; convId = ensureConvs(a).activeConv; }
   const f = logFile(agentId, convId);
   if (!fs.existsSync(f)) return [];
-  const lines = fs.readFileSync(f, "utf8").trim().split("\n").filter(Boolean);
-  return lines.slice(-limit).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  const lines = tailLines(f, limit);
+  return lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+}
+// The last `n` non-empty lines of a file, read backwards in chunks: a long-running project's log can be hundreds of MB
+// and reading it whole (and synchronously) froze the whole station every time that project was selected.
+function tailLines(file, n) {
+  const fd = fs.openSync(file, "r");
+  try {
+    let pos = fs.fstatSync(fd).size, buf = Buffer.alloc(0);
+    const CH = 256 * 1024;
+    for (;;) {
+      const count = (b) => { let c = 0; for (let i = b.indexOf(10); i !== -1; i = b.indexOf(10, i + 1)) c++; return c; };
+      if (pos === 0 || count(buf) > n + 1) break;
+      const len = Math.min(CH, pos); pos -= len;
+      const chunk = Buffer.alloc(len); fs.readSync(fd, chunk, 0, len, pos);
+      buf = Buffer.concat([chunk, buf]);
+    }
+    let lines = buf.toString("utf8").split("\n");
+    if (pos > 0) lines = lines.slice(1); // the first line may be cut off
+    return lines.filter(Boolean).slice(-n);
+  } finally { fs.closeSync(fd); }
 }
 
 // Running runs: agentId -> { kill }
-const running = new Map();
+// The set of running agents is also kept on disk, so that after a restart of the station (a crash, `node --watch`, a
+// reboot) we can tell the user which agents were cut off in the middle of a task instead of silently showing them idle.
+const RUNNING_FILE = dataPath("running.json");
+let shuttingDown = false; // (declared here: shutdown() below sets it)
+const saveRunning = () => { if (shuttingDown) return; try { writePrivate(RUNNING_FILE, JSON.stringify([...running.keys()])); } catch {} };
+class RunningMap extends Map { set(k, v) { super.set(k, v); saveRunning(); return this; } delete(k) { const r = super.delete(k); saveRunning(); return r; } }
+const running = new RunningMap();
 const status = new Map(); // agentId -> "idle" | "thinking" | "tool" | "done" | "error"
 
 function setStatus(agentId, s, extra = {}) {
@@ -385,7 +411,16 @@ app.post("/api/agents/:id/reset", (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-app.get("/api/agents/:id/log", (req, res) => res.json(readLog(req.params.id, 400, req.query.conv ? String(req.query.conv) : undefined)));
+// What the chat view needs from a log entry: very large strings (file contents in Write/Edit, command output) are cut so
+// that opening a long project does not mean shipping and drawing tens of megabytes. The log on disk is untouched.
+const CLIP = 20000;
+function clipBig(v, d = 0) {
+  if (typeof v === "string") return v.length > CLIP ? v.slice(0, CLIP) + `\n… ${v.length - CLIP}` : v;
+  if (d > 4 || !v || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map((x) => clipBig(x, d + 1));
+  const o = {}; for (const k of Object.keys(v)) o[k] = clipBig(v[k], d + 1); return o;
+}
+app.get("/api/agents/:id/log", (req, res) => res.json(readLog(req.params.id, 400, req.query.conv ? String(req.query.conv) : undefined).map((e) => (e.type === "tool_use" || e.type === "tool_result" ? clipBig(e) : e))));
 
 // Open the project folder (or a file inside it) in the operating system's file manager.
 // Security: only paths inside the agent's own folder are opened.
@@ -419,7 +454,6 @@ app.post("/api/agents/:id/open", (req, res) => {
 // ---- Run panel: commands, processes, problems
 runs.init(broadcast);
 // on shutdown: the processes in the Run panel and the running Claude sessions are closed too (no orphan processes)
-let shuttingDown = false;
 function shutdown(sig) {
   if (shuttingDown) return; shuttingDown = true;
   try { runs.stopAll(); } catch {}
@@ -685,7 +719,7 @@ async function startPrompt(agentId, body = {}, opts = {}) {
         }
       } else if (edited && writes && !(await cp.isRepo(agent.cwd))) emit0({ type: "changes", norepo: true });
       running.delete(agent.id);
-      const ctx = result.contextTokens ? { context: { tokens: result.contextTokens, window: result.contextWindow || null, at: Date.now() } } : {};
+      const ctx = result.contextTokens ? { context: { tokens: result.contextTokens, window: result.contextWindow || getAgent(agent.id)?.context?.window || null, at: Date.now() } } : {};
       patchConv(agent.id, convId, { updatedAt: Date.now(), ...(result.sessionId ? { sessionId: result.sessionId } : {}), ...ctx });
       const still = getAgent(agent.id)?.activeConv === convId;
       updateAgent(agent.id, {
@@ -695,10 +729,66 @@ async function startPrompt(agentId, body = {}, opts = {}) {
       });
       broadcast({ type: "agents_changed" });
       onRunEnd(agent.id, result);
+      if (!result.isError) maybeAutoCompact(agent.id, result.contextTokens, result.contextWindow || getAgent(agent.id)?.context?.window);
     }).catch((e) => { running.delete(agent.id); console.error("[ecelon] end of task could not be processed:", e?.stack || e); try { broadcast({ type: "agents_changed" }); } catch {} });
     return run;
   } catch (e) { if (running.get(agent.id)?.starting) running.delete(agent.id); throw e; }
 }
+
+// ---- compact: Claude Code summarizes the conversation (`/compact`) and the same session continues from the summary.
+// Claude Code also does this by itself when the context fills up (we show that as a note); this is the manual / safety-net path.
+async function compactAgent(agentId, trigger = "manual") {
+  const agent = getAgent(agentId); if (!agent) throw new PromptError(404, t("Agent not found"));
+  if (running.has(agent.id)) throw new PromptError(409, t("Agent is busy; stop it or wait for it to finish"));
+  if (!agent.sessionId) throw new PromptError(400, t("There is no conversation to compact yet"));
+  running.set(agent.id, { kill() {}, starting: true });
+  const convId = ensureConvs(agent).activeConv;
+  const note = (text) => { const full = { type: "note", agentId: agent.id, convId, t: Date.now(), text }; appendLog(agent.id, full, convId); broadcast(full); };
+  let compacted = false;
+  const emit = (ev) => {
+    if (ev.type === "rate_limit") { saveUsage(ev.info); return; }
+    if (ev.type === "status") { setStatus(agent.id, ev.status === "done" ? "idle" : ev.status, { note: ev.note }); return; }
+    if (ev.type === "note") { compacted = true; note(ev.text); }
+  };
+  const run = MOCK ? runMockCompact(agent, emit) : runClaude({ ...agent, _team: teamOf(agent.id) }, "/compact", emit);
+  running.set(agent.id, run);
+  run.promise.then((result) => {
+    running.delete(agent.id);
+    if (!result.isError && !compacted && result.text) note("🗜 " + String(result.text).slice(0, 300)); // e.g. "Not enough messages to compact."
+    if (result.isError) { note("⚠ " + t("The conversation could not be compacted: {why}", { why: String(result.text || "").slice(0, 300) })); setStatus(agent.id, "idle"); }
+    const window = result.contextWindow || getAgent(agent.id)?.context?.window || null;
+    const ctx = result.contextTokens && !result.isError ? { context: { tokens: result.contextTokens, window, at: Date.now() } } : {};
+    if (ctx.context) patchConv(agent.id, convId, ctx);
+    if (getAgent(agent.id)?.activeConv === convId) updateAgent(agent.id, { ...ctx, addCostUsd: result.costUsd || 0 });
+    broadcast({ type: "agents_changed" });
+  }).catch((e) => { running.delete(agent.id); console.error("[ecelon] compact failed:", e?.message); setStatus(agent.id, "idle"); });
+  return run;
+}
+function runMockCompact(agent, emit) {
+  const promise = (async () => {
+    emit({ type: "status", status: "thinking", note: t("Compacting the conversation…") });
+    await wait(1200);
+    const pre = agent.context?.tokens || 48200, post = Math.round(pre * 0.18);
+    emit({ type: "note", text: "🗜 " + t("The conversation was compacted ({how}): {pre} → {post} tokens. The agent continues from a summary in this same conversation.", { how: t("on request"), pre: pre.toLocaleString(locale()), post: post.toLocaleString(locale()) }) });
+    emit({ type: "status", status: "done" });
+    return { isError: false, contextTokens: post, contextWindow: agent.context?.window || null, costUsd: 0 };
+  })();
+  return { promise, kill() {} };
+}
+const COMPACT_AT = 0.9; // safety net: if Claude Code's own auto-compaction did not run, compact when the ring is this full
+function maybeAutoCompact(agentId, tokens, window) {
+  if (!tokens || !window || tokens / window < COMPACT_AT) return;
+  setTimeout(() => {
+    const a = getAgent(agentId);
+    if (!a || running.has(agentId) || taskOwner.has(agentId) || chains.get(agentId)?.pending?.size) return;
+    if ((a.context?.tokens || 0) / (a.context?.window || window) < COMPACT_AT) return; // it was compacted in the meantime
+    compactAgent(agentId, "auto").catch(() => {});
+  }, 2000);
+}
+app.post("/api/agents/:id/compact", async (req, res) => {
+  try { await compactAgent(req.params.id, "manual"); res.json({ started: true }); }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
 
 app.post("/api/agents/:id/prompt", async (req, res) => {
   try {
@@ -731,7 +821,7 @@ const tokenFor = (id) => { if (!teamTokens.has(id)) teamTokens.set(id, randomUUI
 // Tools open to the role + MCP config file (under data/; not committed to git)
 function toolsFor(agent, team) {
   const role = roleOf(agent);
-  const list = ["set_requirement_status", "list_requirements", "requirement_detail", "document_sections"];
+  const list = ["set_requirement_status", "list_requirements", "requirement_detail", "document_sections", "create_task", "list_tasks", "update_task"];
   if (role === "analyst") list.push("save_requirements", "mark_sections");
   if (role === "tester") list.push("verify_requirement");
   if (role === "reviewer") list.push("report_missing_requirements");
@@ -807,6 +897,24 @@ async function runTool(a, tool, args = {}) {
   const statusMap = { todo: "todo", doing: "doing", done: "done", unclear: "unclear", out_of_scope: "dropped" };
   try {
     switch (tool) {
+      case "create_task": {
+        const ids = team.map((m) => roleOf(m)); const to = String(args.role || "user");
+        if (to !== "user" && !ids.includes(to)) return { error: t("There is no {role} in this team.", { role: ROLES[to]?.label || to }) + " " + t("Available roles: {roles}.", { roles: ids.map((r) => ROLES[r].label).join(", ") }) + " " + t("Use role 'user' for what only the person can do.") };
+        const it = tasks.add(tk, { title: args.title, detail: args.detail, role: to, priority: args.priority, req: args.requirements, by });
+        broadcast({ type: "tasks", team: tk });
+        teamEvent(leadOfTeam(a).id, { kind: "note", text: t("{by} added a task to the board: {id} {title} → {to}", { by, id: it.id, title: it.title, to: to === "user" ? t("You") : ROLES[to].label }) });
+        return { message: t("Task {id} is on the board for {to}. Do not ask the user to do it in chat; the board shows it to them. Continue with what you can do.", { id: it.id, to: to === "user" ? t("the user") : ROLES[to].label }) };
+      }
+      case "list_tasks": {
+        const mine = roleOf(a); const all = tasks.load(tk).items.filter((x) => args.all ? true : x.role === mine && x.status !== "done");
+        return { message: all.length ? all.map((x) => `${x.id} [${x.status}] (${x.priority}) → ${x.role}: ${x.title}${x.detail ? "\n    " + x.detail.slice(0, 600) : ""}`).join("\n") : t("No tasks.") };
+      }
+      case "update_task": {
+        const it = tasks.update(tk, String(args.id || ""), { status: args.status, note: args.note });
+        if (!it) return { error: t("Task not found: {id}", { id: String(args.id || "") }) };
+        broadcast({ type: "tasks", team: tk });
+        return { message: t("Task {id} updated: {status}.", { id: it.id, status: it.status }) };
+      }
       case "assign_task": return (await delegate(a.id, String(args.role || ""), args.task));
       case "notify_project": return (await notifySibling(a, String(args.project || ""), String(args.message || "")));
       case "save_requirements": {
@@ -999,6 +1107,31 @@ app.post("/api/reqs/:team/:code/segs", (req, res) => {
 });
 
 // ---- requirements (Scope) UI endpoints
+// ---- task board (the user sees what the agents left for each other / for them)
+app.get("/api/tasks/:team", (req, res) => res.json(tasks.load(req.params.team)));
+app.get("/api/tasks/:team/summary", (req, res) => res.json(tasks.summary(req.params.team)));
+app.post("/api/tasks/:team", (req, res) => {
+  try { const it = tasks.add(req.params.team, { ...req.body, by: t("You") }); broadcast({ type: "tasks", team: req.params.team }); res.json(it); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.patch("/api/tasks/:team/:id", (req, res) => {
+  const it = tasks.update(req.params.team, req.params.id, req.body || {}); if (!it) return res.status(404).json({ error: t("Task not found: {id}", { id: req.params.id }) });
+  broadcast({ type: "tasks", team: req.params.team }); res.json(it);
+});
+app.delete("/api/tasks/:team/:id", (req, res) => { tasks.remove(req.params.team, req.params.id); broadcast({ type: "tasks", team: req.params.team }); res.json({ ok: true }); });
+// start: hand the task to the role it is for (the result returns to the lead like any other task)
+app.post("/api/tasks/:team/:id/start", async (req, res) => {
+  const tk = req.params.team, it = tasks.get(tk, req.params.id); if (!it) return res.status(404).json({ error: t("Task not found: {id}", { id: req.params.id }) });
+  if (it.role === "user") return res.status(400).json({ error: t("This task is for you; mark it done when you have done it.") });
+  const lead = listAgents().find((x) => (x.team || x.id) === tk && roleOf(x) === "dev"); if (!lead) return res.status(404).json({ error: t("Lead not found") });
+  const text = `${t("Task {id} from the task board: {title}", { id: it.id, title: it.title })}${it.detail ? "\n\n" + it.detail : ""}${it.req?.length ? "\n\n" + t("Requirements: {codes}", { codes: it.req.join(", ") }) : ""}\n\n` +
+    t("When you finish, call update_task with id {id} (status 'done', and a short result in note). If you get stuck, set 'blocked' and say why.", { id: it.id });
+  try {
+    if (it.role === "dev") { if (running.has(lead.id)) return res.status(409).json({ error: t("Agent is busy; stop it or wait for it to finish") }); await startPrompt(lead.id, { text }); }
+    else { const ch = chainOf(lead.id); if (!running.has(lead.id) && !ch.pending.size) { ch.rounds = 0; ch.cancelled = false; } const r = await delegate(lead.id, it.role, text); if (r.error) return res.status(400).json(r); }
+  } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  tasks.update(tk, it.id, { status: "doing" }); broadcast({ type: "tasks", team: tk }); res.json({ ok: true });
+});
 const teamCwd = (team) => listAgents().find((x) => (x.team || x.id) === team)?.cwd;
 app.get("/api/reqs/:team", (req, res) => {
   const cwd = teamCwd(req.params.team);
@@ -1157,10 +1290,21 @@ wss.on("connection", (ws) => {
 // when something under public/ changes, open browsers reload themselves
 try {
   let tm;
-  fs.watch(PUBLIC, { recursive: true }, () => { clearTimeout(tm); tm = setTimeout(() => broadcast({ type: "reload" }), 250); });
+  if (process.env.ECELON_DEV === "1") fs.watch(PUBLIC, { recursive: true }, () => { clearTimeout(tm); tm = setTimeout(() => broadcast({ type: "reload" }), 250); });
 } catch {}
 
 { const n = ensureFullTeams(); if (n) console.log(`Teams completed: ${n} roles added`); }
+// agents that were working when the station last stopped: say so in their chat
+try {
+  const cut = JSON.parse(fs.readFileSync(RUNNING_FILE, "utf8"));
+  for (const id of Array.isArray(cut) ? cut : []) {
+    const a = getAgent(id); if (!a) continue;
+    const convId = ensureConvs(a).activeConv;
+    appendLog(id, { type: "note", agentId: id, convId, t: Date.now(), text: "⚠ " + t("The station was restarted while this agent was working, so the task was cut off. Write \"Continue\" and it picks up from the same conversation.") }, convId);
+    console.log(`Interrupted by the restart: ${a.name} (${roleOf(a)})`);
+  }
+  fs.writeFileSync(RUNNING_FILE, "[]");
+} catch {}
 if (MOCK && process.env.ECELON_DEMO === "1") await seedDemo().catch((e) => console.error("[demo] seed failed:", e.message));
 const onListenError = (e) => {
   if (e.code === "EADDRINUSE") console.error(`Port ${PORT} is already in use (is Ecelon Station already running?). Try another one: ecelon-station --port ${PORT + 1}`);

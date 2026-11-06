@@ -10,9 +10,30 @@ const ENABLED = new Set((process.env.ECELON_TOOLS || "").split(",").filter(Boole
 const pairs = (s) => (s || "").split("|").filter(Boolean).map((r) => { const i = r.indexOf(":"); return [r.slice(0, i), r.slice(i + 1)]; });
 const ROLES = pairs(process.env.ECELON_ROLES);       // [["tester","Tester"], …]
 const SIBLINGS = pairs(process.env.ECELON_SIBLINGS); // [["teamKey","ERP Frontend"], …]
+const TASK_ROLES = [...new Set(["dev", ...ROLES.map(([id]) => id)])];
 const STATUS = ["todo", "doing", "done", "unclear", "out_of_scope"];
 
 const TOOLS = {
+  create_task: {
+    description:
+      "Put a task on the project's task board. USE THIS INSTEAD OF telling the user 'I cannot do this' or 'someone else should do this': " +
+      `if the work belongs to another role (e.g. running tests is the tester's job) or only the person can do it, create a task for it and continue with what you can do. Roles: dev (the developer), ${ROLES.filter(([id]) => id !== "dev").map(([id, l]) => `${id} (${l})`).join(", ")}, or user (only the person can do it: a decision, a credential, a manual check). ` +
+      "The task must be understandable on its own: what to do, where (files, requirement codes), and how to know it is done. One task per piece of work; list the steps in 'detail'.",
+    inputSchema: { type: "object", properties: {
+      title: { type: "string", description: "Short imperative title" },
+      role: { type: "string", enum: [...TASK_ROLES, "user"], description: "Who has to do it (dev = developer/lead)" },
+      detail: { type: "string", description: "Steps, files, expected result" },
+      priority: { type: "string", enum: ["high", "normal", "low"] },
+      requirements: { type: "array", items: { type: "string" }, description: "Related requirement codes (R-012)" } }, required: ["title", "role"] },
+  },
+  list_tasks: {
+    description: "List the tasks on the board that are waiting for you (all: true lists everyone's).",
+    inputSchema: { type: "object", properties: { all: { type: "boolean" } } },
+  },
+  update_task: {
+    description: "Update a task on the board: status todo/doing/done/blocked and a short note (result, or why it is blocked). Mark tasks 'done' only when really done.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "T-001" }, status: { type: "string", enum: ["todo", "doing", "done", "blocked"] }, note: { type: "string" } }, required: ["id"] },
+  },
   assign_task: {
     description:
       `Give a task to a role in the team. Available roles: ${ROLES.map(([id, l]) => `${id} (${l})`).join(", ")}. The task runs in that role's own session; ` +

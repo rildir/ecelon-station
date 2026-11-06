@@ -1,6 +1,7 @@
 import { createStation, CHARACTERS } from "./scene.js";
 import { createLibrary, badge, KIND } from "./library.js";
 import { createReqs } from "./reqs.js";
+import { createTasks } from "./tasks.js";
 import { createGit } from "./gitui.js";
 import { createEditor } from "./editor.js";
 import { createRuns } from "./runui.js";
@@ -39,7 +40,7 @@ function md(text) {
   parts.forEach((seg, k) => {
     if (k % 2) {
       const nl = seg.indexOf("\n"), lang = nl > -1 ? seg.slice(0, nl).trim() : "", code = nl > -1 ? seg.slice(nl + 1) : seg;
-      out.push(`<div class="code"><div class="code-head"><span>${escHtml(lang || t("code"))}</span><button type="button" class="copy">${t("Copy")}</button></div><pre><code>${escHtml(code.replace(/\n$/, ""))}</code></pre></div>`);
+      out.push(`<div class="code"><div class="code-head"><span>${escHtml(lang || t("code"))}</span><button type="button" class="copy" title="${t("Copy code")}" aria-label="${t("Copy code")}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8.5" height="8.5" rx="2"/><path d="M3.5 10.5h-.5A1.5 1.5 0 0 1 1.5 9V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg><span>${t("Copy")}</span></button></div><pre><code>${escHtml(code.replace(/\n$/, ""))}</code></pre></div>`);
       return;
     }
     const lines = seg.split("\n"); let i = 0, para = [];
@@ -225,6 +226,21 @@ const reqsUI = createReqs({
   onOpen: () => { station.pause(true); closePops(); },
   onClose: () => station.pause(false),
 });
+const tasksUI = createTasks({
+  api, toast, confirmBox,
+  project: (a) => ({ team: teamKey(a), name: leadOf(a).name, roles: teamOf(a).map((m) => ({ id: roleOf(m), label: roleLabel(m) })) }),
+  roleIcon: (id) => ROLE_ICON[id] || "",
+  onOpen: () => { station.pause(true); closePops(); },
+  onClose: () => { station.pause(false); renderTasksBadge(); },
+});
+let tasksSeq = 0;
+async function renderTasksBadge(a = current()) {
+  if (!a) return; const seq = ++tasksSeq;
+  const s = await tasksUI.summary(teamKey(a)); if (seq !== tasksSeq) return;
+  const b = $("#tasks-badge"); b.textContent = s.open ? String(s.open) : ""; b.classList.toggle("warn", s.toUser > 0);
+  $("#btn-tasks").title = s.open ? t("{n} open {n|task|tasks}", { n: s.open }) + (s.toUser ? " · " + t("{n} for you", { n: s.toUser }) : "") : t("Tasks: what the agents left for each other and for you");
+}
+$("#btn-tasks").onclick = () => current() && tasksUI.open(current());
 let badgeSeq = 0;
 async function renderReqsBadge(a = current()) {
   if (!a) return; const seq = ++badgeSeq;
@@ -340,6 +356,7 @@ async function refresh() {
   agents = list;
   if (firstRefresh) { firstRefresh = false; for (const id of queue.keys()) if (!agents.some((x) => x.id === id)) queue.delete(id); saveQueue(); setTimeout(() => { for (const id of queue.keys()) flushQueue(id); }, 1500); }
   station.setAgents(agents);
+  for (const id of queue.keys()) flushQueue(id); // the server tells us (agents_changed) when a slot is free: send what is waiting
   station.select(selectedId);
   $("#empty-hint").hidden = agents.length > 0;
   renderList();
@@ -409,7 +426,7 @@ function fillHeader(a) {
   $("#perm-name").textContent = perm[1];
   $("#perm-btn").classList.toggle("risky", perm[0] === "bypassPermissions");
   $("#perm-btn").title = perm[2];
-  renderContext(a); renderLinked(a); renderTeamTabs(a); renderReqsBadge(a); renderGitBadge(a); renderRunBadge(a);
+  renderContext(a); renderLinked(a); renderTeamTabs(a); renderReqsBadge(a); renderTasksBadge(a); renderGitBadge(a); renderRunBadge(a);
   const team = teamOf(a);
   $("#prompt").placeholder = team.length > 1 && roleOf(a) === "dev" ? t("Write to the team; the lead hands work to the tester or analyst when needed") : team.length > 1 ? t("Talk directly to {role}", { role: roleLabel(a) }) : t("What do you want from this agent?  @ file · # document");
   setStatus(a.status || "idle", a.busy);
@@ -427,7 +444,14 @@ function renderTeamTabs(a = current()) {
   const nav = $("#team-tabs"); if (!a) return;
   $("#btn-remove-role").hidden = true;
   const boss = leadOf(a);
-  if (boss.id === a.id) { nav.hidden = true; nav.innerHTML = ""; return; }
+  if (boss.id === a.id) {
+    const others = teamOf(a).filter((m) => m.id !== a.id);
+    if (!others.length) { nav.hidden = true; nav.innerHTML = ""; return; }
+    nav.hidden = false;
+    nav.innerHTML = `<div class="team-strip">${others.map((m) => `<button type="button" class="ts-chip st-${m.status || "idle"}${isBusy(m) ? " busy" : ""}" data-id="${escHtml(m.id)}" title="${escHtml(t("{role} chat", { role: roleLabel(m) }))}">${ROLE_ICON[roleOf(m)]}<b>${escHtml(roleLabel(m))}</b><span><i class="dot st-${m.status || "idle"}"></i>${escHtml(STATUS_TEXT[m.status] || t("Idle"))}</span></button>`).join("")}</div>`;
+    nav.querySelectorAll(".ts-chip").forEach((b) => { b.onclick = () => selectAgent(b.dataset.id); });
+    return;
+  }
   nav.hidden = false;
   nav.innerHTML = `<div class="member-bar"><button type="button" class="mb-back"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg>${t("Back to team chat")}</button><span class="mb-who">${ROLE_ICON[roleOf(a)]}<b></b><i class="dot st-${a.status || "idle"}"></i></span><small>${t("Writing here talks directly to this role")}</small></div>`;
   nav.querySelector("b").textContent = t("{role} chat", { role: roleLabel(a) });
@@ -448,8 +472,16 @@ function renderContext(a) {
   const arc = $("#ctx-arc"); arc.style.strokeDasharray = L; arc.style.strokeDashoffset = L * (1 - pct);
   el.hidden = false; el.className = "ctx" + (pct > 0.85 ? " full" : pct > 0.6 ? " warn" : "");
   $("#ctx-pct").textContent = t("{n}%", { n: Math.round(pct * 100) });
-  el.title = t("Context: {used} / {window} tokens. When it fills up, 'New conversation' is a good idea.", { used: c.tokens.toLocaleString(locale()), window: c.window.toLocaleString(locale()) });
+  el.title = t("Context: {used} / {window} tokens. Click to compact (summarize) the conversation and keep going in the same chat. Claude Code also compacts by itself when it fills up.", { used: c.tokens.toLocaleString(locale()), window: c.window.toLocaleString(locale()) });
 }
+async function compactNow() {
+  const a = current(); if (!a) return;
+  if (!(await confirmBox({ title: t("Compact the conversation?"), body: t("Claude Code summarizes the conversation so far and the agent continues from that summary, in the same chat. Details of old messages may be lost; the messages stay visible here."), ok: t("Compact") }))) return;
+  try { await api(`/api/agents/${a.id}/compact`, { method: "POST", body: {} }); toast(t("Compacting the conversation…")); }
+  catch (err) { toast(err.message, "bad"); }
+}
+$("#ctx").addEventListener("click", compactNow);
+$("#ctx").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); compactNow(); } });
 
 async function patch(body) {
   try { await api(`/api/agents/${selectedId}`, { method: "PATCH", body }); await refresh(); }
@@ -463,7 +495,10 @@ function setStatus(st, busyFlag) {
   $("#a-portrait").classList.toggle("busy", busy);
 }
 
+window.__sel = { t0: 0, net: 0, longs: [] };
+try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (window.__sel.t0 && e.startTime + e.duration > window.__sel.t0 && e.startTime < window.__sel.t0 + 4000) window.__sel.longs.push(Math.round(e.duration)); }).observe({ entryTypes: ["longtask"] }); } catch {}
 async function selectAgent(id) {
+  window.__sel = { t0: performance.now(), net: 0, longs: [] };
   const prev = current();
   if (prev) saveDraft(teamKey(prev));
   selectedId = id; station.select(id);
@@ -479,8 +514,15 @@ let loadedConv = null;
 let loadSeq = 0;
 let chatOf = null;
 let loadingChat = null; // live events arriving during load wait here; appended in order once the history is drawn
-const CHAT_TAIL = 500; // in a very long conversation only the last events are drawn at first (all of them via "show earlier")
-async function loadChat(all = false) {
+const CHAT_TAIL = 500; // in a very long conversation only the last events are drawn at first (more via "show earlier")
+const CHAT_BUDGET = 60000; // ...and by weight: long replies (tables, code) are what makes drawing slow, not the event count
+function tailByWeight(log, pages) {
+  let w = 0, i = log.length; const cap = CHAT_BUDGET * (1 + pages * 2), max = CHAT_TAIL * (1 + pages * 2);
+  while (i > 0 && log.length - i < max) { const e = log[i - 1]; w += 200 + (typeof e.text === "string" ? e.text.length : 0); if (w > cap && log.length - i >= 20 + pages * 40) break; i--; }
+  return log.slice(i);
+}
+let chatPages = 0, chatPagesOf = null;
+async function loadChat(more = false) {
   const a = current(); if (!a) return;
   const seq = ++loadSeq;
   loadingChat = { agentId: a.id, evs: [] };
@@ -489,16 +531,19 @@ async function loadChat(all = false) {
   const convs = await api(`/api/agents/${a.id}/convs`).catch(() => []);
   const active = convs.find((c) => c.active)?.id || a.activeConv || null;
   a.activeConv = active; loadedConv = active;
-  let log; try { log = await api(`/api/agents/${a.id}/log${active ? "?conv=" + active : ""}`); } catch (err) { if (seq === loadSeq) { loadingChat = null; $("#chat").innerHTML = `<div class="chat-empty"><b>${t("Conversation could not be loaded")}</b><span>${escHtml(err.message)}</span></div>`; } return; }
+  let log; const tN = performance.now(); try { log = await api(`/api/agents/${a.id}/log${active ? "?conv=" + active : ""}`); window.__sel.net = Math.round(performance.now() - tN); } catch (err) { if (seq === loadSeq) { loadingChat = null; $("#chat").innerHTML = `<div class="chat-empty"><b>${t("Conversation could not be loaded")}</b><span>${escHtml(err.message)}</span></div>`; } return; }
   if (seq !== loadSeq || a.id !== selectedId) return; // a newer load started
   if (deltaRaf) { cancelAnimationFrame(deltaRaf); deltaRaf = 0; } deltaBuf = { text: "", think: "" };
   const chat = $("#chat"); chat.innerHTML = ""; liveBubble = liveThink = null; todoCard = null; renderQueue();
-  const tail = !all && log.length > CHAT_TAIL ? log.slice(-CHAT_TAIL) : log;
+  if (chatPagesOf !== a.id || !more) { chatPages = more === true ? 1 : 0; chatPagesOf = a.id; } else chatPages++;
+  const tail = tailByWeight(log, chatPages);
   if (tail.length < log.length) {
     const more = document.createElement("button"); more.type = "button"; more.className = "chat-older";
     more.textContent = t("Show the previous {n} {n|event|events}", { n: log.length - tail.length }); more.onclick = () => loadChat(true); chat.append(more);
   }
+  const tR = performance.now();
   for (const ev of tail) renderEvent(ev, true);
+  window.__load = { events: tail.length, render: Math.round(performance.now() - tR), at: Date.now() };
   const lastT = log.length ? log[log.length - 1].t || 0 : 0, lastJ = log.length ? JSON.stringify(log[log.length - 1]) : "";
   const late = loadingChat?.agentId === a.id ? loadingChat.evs : []; loadingChat = null;
   for (const ev of late) if (!ev.t || ev.t > lastT || (ev.t === lastT && JSON.stringify(ev) !== lastJ)) renderEvent(ev); // events that arrived during load (not in the history)
@@ -511,6 +556,7 @@ async function loadChat(all = false) {
         <li>${t("If you have an analysis document, link it to this project from <b>Documents</b>, then <b>Scope</b> → 'Extract from document'.")}</li></ul>` : `<span>${t("Type @ to add a file, paste to add an image.")}</span>`) + `</div>`;
   }
   chat.scrollTop = chat.scrollHeight; updateJump(); updateActivity();
+  if (window.__load) { const tL = performance.now(); void chat.offsetHeight; window.__load.layout = Math.round(performance.now() - tL); }
 }
 function closePanel() {
   if (current()) saveDraft(teamKey(current()));
@@ -575,7 +621,7 @@ document.addEventListener("keydown", (e) => {
   // in the message box Esc only leaves focus (does not close the panel; what you typed stays)
   if (e.key === "Escape" && e.target === $("#prompt") && $("#mention-pop").hidden) { $("#prompt").blur(); e.preventDefault(); return; }
   // e.defaultPrevented: an upper layer (Scope, Git, editor, documents) already used Esc → do not close the panel
-  if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]") || lib.isOpen || reqsUI.isOpen || gitUI.isOpen || edUI.isOpen || runUI.isOpen) return;
+  if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]") || lib.isOpen || reqsUI.isOpen || tasksUI.isOpen || gitUI.isOpen || edUI.isOpen || runUI.isOpen) return;
   if ([...document.querySelectorAll(".pop")].some((p) => !p.hidden)) closePops(); else if (selectedId) closePanel();
 });
 
@@ -756,6 +802,7 @@ const FILE_TOOLS = new Set(["Read", "Edit", "Write", "MultiEdit", "NotebookEdit"
 const ICON = {
   folder: `<svg viewBox="0 0 16 16"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5Z"/></svg>`,
   copy: `<svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="2"/><path d="M3.5 10.5h-.5A1.5 1.5 0 0 1 1.5 9V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>`,
+  check: `<svg viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5"/></svg>`,
   edit: `<svg viewBox="0 0 16 16"><path d="M11 2.5 13.5 5 6 12.5H3.5V10Z"/></svg>`,
   redo: `<svg viewBox="0 0 16 16"><path d="M13 3v4H9"/><path d="M13 7a5.5 5.5 0 1 0-1.4 4.7"/></svg>`,
 };
@@ -765,6 +812,29 @@ function actions(d, list) {
   d.append(bar);
 }
 const copyText = (s) => navigator.clipboard.writeText(s).then(() => toast(t("Copied")), () => toast(t("Could not copy"), "bad"));
+// copy button feedback: icon + label switch to "Copied" for 1.5 s; every button keeps its own timer, so several can show it at once
+function legacyCopy(text) { // when the Clipboard API refuses (window not focused, old webview)
+  const ta = document.createElement("textarea"); ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+  document.body.append(ta); ta.select(); let ok = false; try { ok = document.execCommand("copy"); } catch {} ta.remove();
+  return ok ? Promise.resolve() : Promise.reject(new Error("copy failed"));
+}
+function copyWithState(btn, text) {
+  navigator.clipboard.writeText(text).catch(() => legacyCopy(text)).then(() => {
+    if (!btn._idle) btn._idle = btn.innerHTML;
+    btn.classList.add("copied"); btn.innerHTML = btn.dataset.check; clearTimeout(btn._t);
+    btn._t = setTimeout(() => { btn.classList.remove("copied"); btn.innerHTML = btn._idle; }, 1500);
+  }, () => toast(t("Could not copy"), "bad"));
+}
+// bar under a finished assistant message (not shown while it streams: it is only added when the full message arrives)
+function replyBar(d, text) {
+  const bar = document.createElement("div"); bar.className = "reply-bar"; bar.setAttribute("role", "toolbar"); bar.setAttribute("aria-label", t("Message actions"));
+  const b = document.createElement("button"); b.type = "button"; b.className = "rb-btn";
+  b.title = t("Copy message as Markdown"); b.setAttribute("aria-label", t("Copy message as Markdown"));
+  b.innerHTML = `${ICON.copy}<span>${t("Copy")}</span>`;
+  b.dataset.check = `${ICON.check}<span>${t("Copied")}</span>`;
+  b.onclick = (e) => { e.stopPropagation(); copyWithState(b, text); };
+  bar.append(b); d.append(bar);
+}
 
 // ---- tool row + detail
 function diffHtml(oldS = "", newS = "") {
@@ -779,13 +849,21 @@ function toolDetail(name, input) {
   if (name === "Bash") return `${input.description ? `<p class="tdesc">${escHtml(input.description)}</p>` : ""}<pre class="cmd">$ ${escHtml(input.command || "")}</pre>`;
   return "";
 }
+const OUT_MAX = 20000;
+function fillDetail(d) {
+  if (d._filled) return; d._filled = true;
+  const det = d.querySelector(".tdetail"); det.innerHTML = toolDetail(d.dataset.name, d._input);
+  const o = d._out; if (!o) return;
+  const pre = document.createElement("pre"); pre.className = "out" + (o.isError ? " bad" : "");
+  pre.textContent = o.content.length > OUT_MAX ? o.content.slice(0, OUT_MAX) + "\n… " + t("{n} more characters", { n: o.content.length - OUT_MAX }) : o.content; det.append(pre);
+}
 function toolRow(ev) {
   const d = addMsg("tool", `<div class="trow"><b></b><span></span><button type="button" class="topen" hidden title="${t("Show in folder")}">${ICON.folder}</button><em class="st">…</em></div><div class="tdetail" hidden></div>`);
   d.dataset.id = ev.toolUseId; d.dataset.name = ev.name;
   const TOOL_LABEL = { mcp__team__set_requirement_status: t("Scope"), mcp__team__save_requirements: t("Scope save"), mcp__team__list_requirements: t("Scope list"), mcp__team__notify_project: t("Sibling project") };
   d.querySelector("b").textContent = TOOL_LABEL[ev.name] || ev.name;
   const sp = d.querySelector("span"); sp.textContent = relToAgent(ev.summary); sp.title = ev.summary || "";
-  const det = d.querySelector(".tdetail"); det.innerHTML = toolDetail(ev.name, ev.input);
+  const det = d.querySelector(".tdetail"); d._input = ev.input; // the detail (diffs, file contents, outputs) is built when the row is opened: a long history has thousands of them
   if (isImagePath(ev.summary)) d.dataset.img = ev.summary;
   if (FILE_TOOLS.has(ev.name) && ev.summary) {
     const o = d.querySelector(".topen"); o.hidden = false; o.onclick = (e) => { e.stopPropagation(); openInFolder(ev.summary); };
@@ -796,8 +874,8 @@ function toolRow(ev) {
       o.before(c);
     }
   }
-  d.querySelector(".trow").onclick = () => { if (det.innerHTML.trim()) { det.hidden = !det.hidden; d.classList.toggle("open", !det.hidden); } };
-  if (det.innerHTML.trim()) d.classList.add("expandable");
+  d.querySelector(".trow").onclick = () => { fillDetail(d); if (det.innerHTML.trim()) { det.hidden = !det.hidden; d.classList.toggle("open", !det.hidden); } };
+  if (["Edit", "MultiEdit", "Write", "Bash"].includes(ev.name) && ev.input) d.classList.add("expandable");
   return d;
 }
 
@@ -908,7 +986,7 @@ function renderEvent(ev, replay = false) {
       d.classList.add("rich"); d.innerHTML = md(ev.text); liveBubble = null;
       const imgs = findImagePaths(ev.text);
       if (imgs.length) d.append(gallery(imgs));
-      actions(d, [["copy", t("Copy"), () => copyText(ev.text)]]);
+      replyBar(d, ev.text);
       break;
     }
     case "team": if (ev.kind === "changes") changesCard(ev, ev.from); else teamCard(ev, replay); break;
@@ -931,8 +1009,8 @@ function renderEvent(ev, replay = false) {
       const st = t.querySelector(".st"); st.textContent = ev.isError ? "✗" : "✓"; st.className = "st " + (ev.isError ? "bad" : "ok");
       const det = t.querySelector(".tdetail");
       const showOut = ev.content && !(t.dataset.name === "Edit" || t.dataset.name === "MultiEdit" || t.dataset.name === "Write") || ev.isError;
-      if (showOut && ev.content) { const pre = document.createElement("pre"); pre.className = "out" + (ev.isError ? " bad" : ""); pre.textContent = ev.content; det.append(pre); t.classList.add("expandable"); }
-      if (ev.isError && det.innerHTML.trim()) { det.hidden = false; t.classList.add("open"); }
+      if (showOut && ev.content) { t._out = { content: String(ev.content), isError: !!ev.isError }; if (t._filled) { t._filled = false; } t.classList.add("expandable"); }
+      if (ev.isError) { fillDetail(t); if (det.innerHTML.trim()) { det.hidden = false; t.classList.add("open"); } }
       if (!ev.isError && t.dataset.img) { const row = document.createElement("div"); row.className = "gallery-row"; row.append(gallery([t.dataset.img])); t.after(row); }
       break;
     }
@@ -1073,12 +1151,26 @@ async function handoff(m, text, extra = {}) {
 // clicks inside the chat: copy code, open a local link
 chatEl().addEventListener("click", (e) => {
   const cp = e.target.closest(".code .copy");
-  if (cp) { copyText(cp.closest(".code").querySelector("code").textContent); return; }
+  if (cp) {
+    cp.dataset.check = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5"/></svg><span>${t("Copied")}</span>`;
+    copyWithState(cp, cp.closest(".code").querySelector("code").textContent); return; // only the raw code: the language label is outside <code>
+  }
   const a = e.target.closest("a[data-open]");
   if (a) { e.preventDefault(); openInFolder(a.dataset.open); }
 });
 // jump-to-bottom button
-function updateJump() { $("#jump").hidden = nearBottom(); }
+function updateJump() { $("#jump").hidden = nearBottom(); updateSticky(); }
+// like the Claude Code editor: the last prompt you wrote stays pinned at the top once it has scrolled out of view
+function updateSticky() {
+  const bar = $("#sticky-prompt"), chat = chatEl(), top = chat.getBoundingClientRect().top;
+  const users = chat.querySelectorAll(".msg.user");
+  let last = null; for (const u of users) { if (u.getBoundingClientRect().bottom < top + 4) last = u; else break; }
+  if (!last) { bar.hidden = true; bar._el = null; return; }
+  bar._el = last; bar.hidden = false;
+  const txt = last.textContent.trim().replace(/\s+/g, " ");
+  if (bar._txt !== txt) { bar._txt = txt; bar.querySelector("span").textContent = txt; }
+}
+$("#sticky-prompt").onclick = () => { const el = $("#sticky-prompt")._el; if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); };
 chatEl().addEventListener("scroll", updateJump);
 $("#jump").onclick = () => { chatEl().scrollTo({ top: chatEl().scrollHeight, behavior: "smooth" }); };
 
@@ -1135,11 +1227,13 @@ function openBell() {
   const m = document.createElement("div"); m.className = "pop lib-menu bell-pop";
   const on = notifyOn && "Notification" in window && Notification.permission === "granted";
   const ICON = { done: "✓", permission: "⚠", error: "✕" };
-  m.innerHTML = `<p class="lm-title">${t("Notifications")}</p>` + (notifs.length ? notifs.slice(0, 30).map((x, i) => `<button type="button" class="bn-item k-${x.kind}${x.read ? "" : " unread"}" data-i="${i}"><i>${ICON[x.kind] || "•"}</i><span><b>${escHtml(x.title)}</b><small>${escHtml(x.body || "")}</small></span><em>${new Date(x.at).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}</em></button>`).join("")
+  m.innerHTML = `<p class="lm-title">${t("Notifications")}</p><div class="bn-list">` + (notifs.length ? notifs.slice(0, 30).map((x, i) => `<button type="button" class="bn-item k-${x.kind}${x.read ? "" : " unread"}" data-i="${i}"><i>${ICON[x.kind] || "•"}</i><span><b>${escHtml(x.title)}</b><small>${escHtml(x.body || "")}</small></span><em>${new Date(x.at).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}</em></button>`).join("")
     : `<p class="bn-empty">${t("No notifications yet. They appear here when a team finishes its work, asks for permission or hits an error.")}</p>`) +
-    `<div class="bn-foot"><button type="button" data-bn="desk">${on ? t("Turn desktop notifications off") : t("Turn desktop notifications on")}</button>${notifs.length ? `<button type="button" data-bn="clear">${t("Clear")}</button>` : ""}</div>`;
+    `</div><div class="bn-foot"><button type="button" data-bn="desk">${on ? t("Turn desktop notifications off") : t("Turn desktop notifications on")}</button>${notifs.length ? `<button type="button" data-bn="clear">${t("Clear")}</button>` : ""}</div>`;
   document.body.append(m); bellPop = m;
-  const r = $("#btn-notify").getBoundingClientRect(); m.style.left = Math.max(8, r.right - m.offsetWidth) + "px"; m.style.top = r.bottom + 8 + "px";
+  const r = $("#btn-notify").getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 8)) + "px"; m.style.top = r.bottom + 8 + "px";
+  m.style.maxHeight = Math.max(200, innerHeight - r.bottom - 24) + "px"; // never taller than the space under the bell: the footer buttons stay reachable
   m.onclick = async (e) => {
     const it = e.target.closest(".bn-item");
     if (it) { const x = notifs[+it.dataset.i]; closeBell(); const a = agents.find((q) => q.id === x.agentId); if (a) { selectAgent(a.id); station.focus(a.id); } else toast(t("This project is no longer in the station"), "bad"); return; }
@@ -1227,6 +1321,7 @@ function connectWS() {
     if (ev.type === "fs") { edUI.onFs(ev); return; }
     if (ev.type === "run-out") { runUI.onEvent(ev); return; }
     if (ev.type === "run") { runUI.onEvent(ev); if (ev.status) { if (ev.status === "running") runCounts[ev.team] = (runCounts[ev.team] || 0); refreshRunCounts(); } return; }
+    if (ev.type === "tasks") { tasksUI.onEvent(ev); if (current() && teamKey(current()) === ev.team) renderTasksBadge(); return; }
     if (ev.type === "reqs") { reqsUI.onEvent(ev); if (current() && teamKey(current()) === ev.team) renderReqsBadge(); return; }
     if (ev.type === "library-tool") { lib.onTool(ev); return; }
     if (ev.agentId) {
@@ -1300,7 +1395,9 @@ async function sendPrompt({ text = "", images = [], allowOnce = [], docs = [], h
     a.status = "idle"; if (a.id === selectedId) { setStatus("idle"); updateActivity(); }
     if (err.status === 409 || /meşgul|çalışıyor|busy|running/i.test(err.message)) { // still busy on the server: queue the message, it goes when done
       const q = queue.get(a.id) || []; q.unshift({ text, images, allowOnce, docs, handoffFrom }); queue.set(a.id, q); saveQueue();
-      if (a.id === selectedId) renderQueue(); a.status = "thinking"; if (a.id === selectedId) setStatus("thinking");
+      if (a.id === selectedId) renderQueue();
+      // the server frees the slot a moment after the "done" event (it is still saving the changes): try again shortly, no event will come by itself
+      setTimeout(() => flushQueue(a.id), 1500);
       toast(t("The agent is still working; the message was queued"));
     } else toast(err.message, "bad");
     return false;
@@ -1554,6 +1651,47 @@ $("#add-form").addEventListener("submit", async (e) => {
   } catch (err) { $("#add-err").textContent = err.message; }
 });
 
+// ================= focus mode =================
+// chat in full width with the project list on the left; the 3D scene is switched off (no GPU/CPU spent on it)
+{
+  const btns = [...document.querySelectorAll(".fx-btn")], rail = $("#rail");
+  const set = (on) => {
+    document.body.classList.toggle("focus", on); for (const b of btns) b.setAttribute("aria-pressed", String(on)); rail.hidden = !on;
+    const ul = $("#agent-list");
+    if (on) rail.insertBefore(ul, rail.querySelector(".rail-width")); else $("#panel-empty").querySelector(".cli-warn").after(ul); // the same list, so selection, drag and badges keep working
+    station.hold(on);
+    renderList();
+  };
+  window.__setFocus = set;
+  // chat width in focus mode: slider from a readable column up to the full window (the far end = full width, the default)
+  const sl = $("#fx-width"), out = $("#fx-width-out"), FULL = +sl.max;
+  const applyW = (v) => { v = Math.max(+sl.min, Math.min(FULL, +v || FULL)); sl.value = v; sl.style.setProperty("--p", ((v - +sl.min) / (FULL - +sl.min)) * 100 + "%"); document.documentElement.style.setProperty("--fx-w", v >= FULL ? "100%" : v + "px"); out.textContent = v >= FULL ? t("Full") : v + " px"; return v; };
+  let w0 = FULL; try { w0 = +localStorage.getItem("fxWidth") || FULL; } catch {}
+  applyW(w0);
+  sl.oninput = () => { const v = applyW(sl.value); try { localStorage.setItem("fxWidth", String(v)); } catch {} };
+  sl.ondblclick = () => { applyW(FULL); try { localStorage.setItem("fxWidth", String(FULL)); } catch {} };
+  // the project list can be dragged wider / narrower (double-click resets); very narrow = portraits only
+  {
+    const rz = $("#rail-resizer"), MINW = 64, MAXW = 460, DEF = 340;
+    const setW = (w, save) => { w = Math.round(Math.max(MINW, Math.min(MAXW, w))); document.documentElement.style.setProperty("--rail-w", w + "px"); document.body.classList.toggle("rail-mini", w < 190); if (save) try { localStorage.setItem("railW", String(w)); } catch {} return w; };
+    let w0 = DEF; try { w0 = +localStorage.getItem("railW") || DEF; } catch {}
+    setW(w0);
+    rz.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); rz.setPointerCapture(e.pointerId); document.body.classList.add("resizing");
+      const left = rail.getBoundingClientRect().left;
+      const x0 = e.clientX; let moved = false;
+      const move = (ev) => { if (!moved && Math.abs(ev.clientX - x0) < 3) return; moved = true; setW(ev.clientX - left, false); };
+      const up = (ev) => { rz.removeEventListener("pointermove", move); document.body.classList.remove("resizing"); if (moved) setW(ev.clientX - left, true); };
+      rz.addEventListener("pointermove", move); rz.addEventListener("pointerup", up, { once: true });
+    });
+    rz.addEventListener("dblclick", () => setW(DEF, true));
+    rz.addEventListener("keydown", (e) => { const cur = rail.getBoundingClientRect().width; if (e.key === "ArrowLeft") setW(cur - 24, true); else if (e.key === "ArrowRight") setW(cur + 24, true); });
+  }
+  const toggle = () => set(!document.body.classList.contains("focus"));
+  for (const b of btns) b.onclick = toggle;
+  document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "\\") { e.preventDefault(); toggle(); } });
+}
+
 // ================= panel width (drag) =================
 {
   const app = $("#app"), handle = $("#resizer");
@@ -1575,7 +1713,7 @@ $("#add-form").addEventListener("submit", async (e) => {
       save(apply(innerWidth - ev.clientX));
       document.body.classList.remove("resizing");
       cv.style.width = ""; cv.style.height = "";
-      if (!lib.isOpen && !reqsUI.isOpen && !gitUI.isOpen && !edUI.isOpen) station.pause(false);
+      if (!lib.isOpen && !reqsUI.isOpen && !tasksUI.isOpen && !gitUI.isOpen && !edUI.isOpen) station.pause(false);
     };
     handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", up, { once: true });
   });
@@ -1805,13 +1943,13 @@ addEventListener("blur", closeCtx); addEventListener("resize", closeCtx);
   document.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.key.toLowerCase() === "k") { if (lib.isOpen || e.defaultPrevented) return; e.preventDefault(); openSwitch(); return; }
-    const closeOthers = () => { if (lib.isOpen) lib.close(); if (reqsUI.isOpen) reqsUI.close(); if (gitUI.isOpen) gitUI.close(); };
+    const closeOthers = () => { if (lib.isOpen) lib.close(); if (reqsUI.isOpen) reqsUI.close(); if (tasksUI.isOpen) tasksUI.close(); if (gitUI.isOpen) gitUI.close(); };
     if (e.key.toLowerCase() === "e" && current() && !edUI.isOpen && !document.querySelector("dialog[open]")) { e.preventDefault(); closeOthers(); if (runUI.isOpen) runUI.close(); openCode(); return; }
     if (e.key.toLowerCase() === "j" && current() && !runUI.isOpen && !document.querySelector("dialog[open]")) { e.preventDefault(); closeOthers(); if (edUI.isOpen) edUI.close(); openRun(); return; }
     if (/^[1-9]$/.test(e.key) && !document.querySelector("dialog[open]:not(#dlg-switch)")) {
       const p = projects()[+e.key - 1]; if (!p) return;
       e.preventDefault(); if (dlg.open) dlg.close();
-      if (lib.isOpen) lib.close(); if (reqsUI.isOpen) reqsUI.close(); if (gitUI.isOpen) gitUI.close(); if (edUI.isOpen) edUI.close(); if (runUI.isOpen) runUI.close();
+      if (lib.isOpen) lib.close(); if (reqsUI.isOpen) reqsUI.close(); if (tasksUI.isOpen) tasksUI.close(); if (gitUI.isOpen) gitUI.close(); if (edUI.isOpen) edUI.close(); if (runUI.isOpen) runUI.close();
       selectAgent(p.id); station.focus(p.id); setTimeout(() => $("#prompt").focus(), 50);
     }
   });
@@ -1901,4 +2039,44 @@ function renderBc() {
     ${bc.ids.map((id) => { const a = agents.find((x) => x.id === id); const st = bc.st.get(id); return a ? `<button type="button" class="bt-row" data-id="${id}"><i class="dot ${D[st]}"></i><span>${escHtml(agentLabel(a))}</span><em class="bt-${st}">${L[st]}</em></button>` : ""; }).join("")}`;
   box.querySelector(".bt-x").onclick = () => { bc = null; renderBc(); };
   box.querySelectorAll(".bt-row").forEach((b) => (b.onclick = () => { selectAgent(b.dataset.id); station.focus(b.dataset.id); }));
+}
+
+
+// small level badge shown for a moment while zooming (the page has no browser zoom badge any more)
+{ let hudT = 0; window.__hud = (txt) => { const h = $("#zoom-hud"); h.textContent = txt; h.hidden = false; clearTimeout(hudT); hudT = setTimeout(() => { h.hidden = true; }, 1300); }; }
+// Ctrl + wheel / Ctrl +/-/0: the browser would zoom the whole page (%150 badge, layout breaks). Instead the chat text zooms; the code editor keeps its own font zoom.
+{
+  let z = 1; try { z = Number(localStorage.getItem("chatZoom")) || 1; } catch {}
+  const apply = (v) => { z = Math.min(2, Math.max(0.7, Math.round(v * 20) / 20)); chatEl().style.zoom = z === 1 ? "" : String(z); try { localStorage.setItem("chatZoom", String(z)); } catch {} updateJump(); window.__hud?.(t("Chat text {n}%", { n: Math.round(z * 100) })); };
+  apply(z); $("#zoom-hud").hidden = true;
+  const inEditor = (el) => !!el?.closest?.("#ed-monaco, #editor, #ed-diff-host");
+  addEventListener("wheel", (e) => { if (!e.ctrlKey) return; e.preventDefault(); if (inEditor(e.target)) return; apply(z + (e.deltaY < 0 ? 0.05 : -0.05)); }, { passive: false, capture: true });
+  addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = e.key; if (!["+", "=", "-", "_", "0"].includes(k)) return;
+    e.preventDefault(); if (inEditor(document.activeElement)) return;
+    apply(k === "0" ? 1 : z + (k === "-" || k === "_" ? -0.05 : 0.05));
+  }, true);
+}
+
+// Performance meter (Ctrl+Shift+P): frame rate, worst frame, 3D draw calls, long main-thread tasks, memory
+{
+  let on = false, raf = 0, frames = 0, worst = 0, last = 0, t0 = 0, longs = 0, longMax = 0;
+  const el = document.createElement("div"); el.id = "perf-hud"; el.hidden = true; document.body.append(el);
+  try { new PerformanceObserver((l) => { for (const e of l.getEntries()) { longs++; longMax = Math.max(longMax, e.duration); } }).observe({ entryTypes: ["longtask"] }); } catch {}
+  const tick = (x) => {
+    if (!on) return;
+    frames++; if (last) worst = Math.max(worst, x - last); last = x;
+    if (x - t0 >= 1000) {
+      const st = station.stats?.() || {}, mem = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) + " MB" : "–";
+      el.textContent = `${Math.round(frames * 1000 / (x - t0))} fps · ${t("worst frame")} ${Math.round(worst)} ms\n3D: ${st.paused ? t("off") : (st.calls ?? "–") + " " + t("draws")} · ${st.rooms ?? 0} ${t("rooms")} · DPR ${st.dpr ?? "–"}\n${t("long tasks")}: ${longs} (max ${Math.round(longMax)} ms) · ${t("memory")} ${mem}\nDOM: ${document.getElementsByTagName("*").length}\n${t("last selection")}: ${t("log")} ${window.__sel.net} ms · ${t("draw")} ${window.__load?.render ?? "–"} ms · ${t("long tasks")} ${window.__sel.longs.join(", ") || "–"}`;
+      frames = 0; worst = 0; t0 = x; longs = 0; longMax = 0;
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  document.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.key.toLowerCase() !== "p") return;
+    e.preventDefault(); on = !on; el.hidden = !on; cancelAnimationFrame(raf);
+    if (on) { frames = worst = last = 0; t0 = performance.now(); raf = requestAnimationFrame(tick); }
+  });
 }

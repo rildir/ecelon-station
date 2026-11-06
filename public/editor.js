@@ -1,4 +1,5 @@
 // Code editor: VS Code's editor (Monaco) + file explorer + search in project.
+function savedFont() { try { const v = Number(localStorage.getItem("editorFont")); if (v >= 8 && v <= 40) return v; } catch {} return 13.5; }
 // If the agent writes to the same file: with no unsaved changes the file is reloaded silently, otherwise a warning and the diff are shown.
 import { t } from "./i18n.js";
 const $ = (s, r = document) => r.querySelector(s);
@@ -51,11 +52,16 @@ export function createEditor(ctx) {
     renderSide();
     try { monaco = await loadMonaco(); } catch (e) { $("#ed-main").innerHTML = `<div class="lib-empty"><b>${t("Could not load the editor")}</b><p>${esc(e.message)}</p></div>`; return; }
     if (!ed) {
-      ed = monaco.editor.create($("#ed-monaco"), { theme: "ecelon", automaticLayout: true, fontFamily: "JetBrains Mono, Consolas, monospace", fontSize: 13.5, lineHeight: 21, minimap: { enabled: true, renderCharacters: false },
+      ed = monaco.editor.create($("#ed-monaco"), { theme: "ecelon", automaticLayout: true, fontFamily: "JetBrains Mono, Consolas, monospace", fontSize: savedFont(), mouseWheelZoom: true, lineHeight: 0, minimap: { enabled: true, renderCharacters: false },
         smoothScrolling: true, cursorBlinking: "smooth", unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true } /* so the Turkish dotless/dotted i are not flagged as ambiguous */, renderWhitespace: "selection", bracketPairColorization: { enabled: true }, guides: { bracketPairs: true }, scrollBeyondLastLine: false, tabSize: 2, stickyScroll: { enabled: true } });
       ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save());
       ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => quickOpen());
       ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => showSearch());
+      // Ctrl + wheel zoom is built into Monaco (mouseWheelZoom); Ctrl +/-/0 too, and the size is remembered
+      ed.onDidChangeConfiguration((e) => { if (e.hasChanged(monaco.editor.EditorOption.fontSize)) { const v = ed.getOption(monaco.editor.EditorOption.fontSize); try { localStorage.setItem("editorFont", String(v)); } catch {} window.__hud?.(t("Editor text {n}%", { n: Math.round((v / 13.5) * 100) }) + " · " + Math.round(v * 10) / 10 + " px"); if (diffEd) diffEd.updateOptions({ fontSize: v }); } });
+      ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Equal, () => ed.updateOptions({ fontSize: Math.min(40, ed.getOption(monaco.editor.EditorOption.fontSize) + 1) }));
+      ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Minus, () => ed.updateOptions({ fontSize: Math.max(8, ed.getOption(monaco.editor.EditorOption.fontSize) - 1) }));
+      ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit0, () => ed.updateOptions({ fontSize: 13.5 }));
       ed.onDidChangeCursorPosition(() => renderStatus());
       ed.onDidChangeModelContent(() => { const t = activeTab(); if (t?.preview) { t.preview = false; } renderTabs(); });
     }
@@ -241,7 +247,7 @@ export function createEditor(ctx) {
     $("#ed-monaco").hidden = true; $("#ed-diff").hidden = false;
     // renderMarginRevertIcon: shows a ← arrow next to every change hunk on the right; clicking reverts that hunk to the left (on-disk) version
     if (!diffEd) diffEd = monaco.editor.createDiffEditor($("#ed-diff-host"), { theme: "ecelon", automaticLayout: true, readOnly: false, originalEditable: false, renderSideBySide: true, renderMarginRevertIcon: true, renderIndicators: true,
-      fontFamily: "JetBrains Mono, Consolas, monospace", fontSize: 13, unicodeHighlight: { ambiguousCharacters: false } });
+      fontFamily: "JetBrains Mono, Consolas, monospace", fontSize: savedFont(), unicodeHighlight: { ambiguousCharacters: false } });
     const orig = monaco.editor.createModel(d.text ?? "", tb.model.getLanguageId());
     diffEd.getModel()?.original?.dispose();
     diffEd.setModel({ original: orig, modified: tb.model });

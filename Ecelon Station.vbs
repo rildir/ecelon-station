@@ -10,7 +10,7 @@ url = "http://127.0.0.1:4777"
 If Not IsUp() Then
   sh.CurrentDirectory = dir
   If Not fso.FolderExists(dir & "\data") Then fso.CreateFolder(dir & "\data")
-  sh.Run "cmd /c node --watch server\index.js > data\server.log 2>&1", 0, False
+  sh.Run "cmd /c node server\index.js > data\server.log 2>&1", 0, False
   For i = 1 To 60
     WScript.Sleep 500
     If IsUp() Then Exit For
