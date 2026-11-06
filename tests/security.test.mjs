@@ -164,3 +164,21 @@ test("git config in the project cannot run programs (core.fsmonitor)", async (t)
   await sleep(300);
   assert.equal(fs.existsSync(marker), false, "the station must not run the fsmonitor command" + (control ? "" : " (control did not trigger on this git)"));
 });
+
+test("git diff/show/log still work under the hardening flags, and an external diff program is not run", async () => {
+  const { gitArgs } = await import("../server/gitsafe.js");
+  const repo = path.join(SANDBOX, "diffrepo"); fs.mkdirSync(repo);
+  const g = (...a) => spawnSync("git", a, { cwd: repo, encoding: "utf8" });
+  if (g("init", "-q").status !== 0) return; // no git on this machine
+  g("config", "user.email", "t@t"); g("config", "user.name", "t");
+  fs.writeFileSync(path.join(repo, "a.txt"), "one\n"); g("add", "."); g("commit", "-qm", "init");
+  fs.appendFileSync(path.join(repo, "a.txt"), "two\n");
+  const marker = path.join(SANDBOX, "extdiff-ran");
+  g("config", "diff.external", `touch ${marker.replace(/\\/g, "/")}; echo`);
+  for (const args of [["diff"], ["diff", "--stat"], ["show", "--name-status", "HEAD"], ["log", "-n1", "--pretty=format:%h"]]) {
+    const r = spawnSync("git", gitArgs(args), { cwd: repo, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")} failed: ${r.stderr}`);
+  }
+  assert.match(spawnSync("git", gitArgs(["diff"]), { cwd: repo, encoding: "utf8" }).stdout, /\+two/);
+  assert.equal(fs.existsSync(marker), false, "the external diff program must not run");
+});

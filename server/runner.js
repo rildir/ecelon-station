@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { roleArgs } from "./roles.js";
-import { t } from "./i18n.js";
+import { t, locale } from "./i18n.js";
 import { dataPath } from "./paths.js";
 
 // On Windows Claude Code may be `claude.exe` (native install), `claude.cmd` (npm) or the version inside
@@ -256,6 +256,15 @@ export function runClaude(agent, prompt, emit) {
           const mcp = (msg.mcp_servers || []).map((s) => ({ name: s.name, status: s.status }));
           const mcpErr = msg.mcp_server_errors || null;
           emit({ type: "init", sessionId, model: msg.model, tools: (msg.tools || []).length, mcp, mcpErr });
+        } else if (msg.subtype === "status" && msg.status === "compacting") {
+          emit({ type: "status", status: "thinking", note: t("Compacting the conversation…") });
+        } else if (msg.subtype === "compact_boundary") {
+          // Claude Code summarized the conversation (it does this by itself when the context fills up, or on /compact);
+          // the session id stays the same and the agent continues from the summary.
+          const m = msg.compact_metadata || {};
+          if (m.post_tokens) lastContext = m.post_tokens;
+          emit({ type: "note", text: "🗜 " + t("The conversation was compacted ({how}): {pre} → {post} tokens. The agent continues from a summary in this same conversation.", {
+            how: m.trigger === "auto" ? t("automatically") : t("on request"), pre: Number(m.pre_tokens || 0).toLocaleString(locale()), post: Number(m.post_tokens || 0).toLocaleString(locale()) }) });
         } else if (msg.subtype === "api_retry") {
           emit({ type: "status", status: "thinking", note: t("Retrying the API ({attempt}/{max})", { attempt: msg.attempt, max: msg.max_retries }) });
         }

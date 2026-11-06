@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Task board: agents leave a task for another role (or for you) instead of stopping at "I cannot do that"; start it with one click, track it in To do / In progress / Blocked / Done.
+- Chat: team status strip, pinned last prompt; editor font zoom (Ctrl + wheel).
+- Fixes: queued messages could get stuck after the agent finished; server restarts no longer silently cut agents off; notification panel overflow.
+
 ## 0.1.0 — first public release
 
 - Isometric station: every project folder is a room, every role (developer, analyst, tester, reviewer) a character.

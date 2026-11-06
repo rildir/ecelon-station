@@ -74,10 +74,22 @@
     <div id="tooltip" role="tooltip" hidden></div>
   </main>
 
+  <div id="zoom-hud" hidden></div>
+
+  <nav id="rail" hidden data-i18n-attr="aria-label" aria-label="Projects">
+    <div id="rail-resizer" role="separator" aria-orientation="vertical" data-i18n-attr="aria-label" aria-label="Widen or narrow the project list" tabindex="0"></div>
+    <div class="rail-head"><h1 data-i18n>Projects</h1></div>
+    <label class="rail-width"><span data-i18n>Chat width</span><input type="range" id="fx-width" min="640" max="1840" step="20" data-i18n-attr="aria-label" aria-label="Chat width"><output id="fx-width-out"></output></label>
+  </nav>
+
   <aside id="panel">
     <div id="resizer" role="separator" aria-orientation="vertical" data-i18n-attr="aria-label" aria-label="Widen or narrow the panel" tabindex="0"></div>
     <section id="panel-empty">
+      <div class="fx-empty"><b data-i18n>Pick a project</b><span data-i18n>Choose one on the left to open its chat.</span></div>
       <div class="list-head">
+        <button type="button" id="btn-focus-list" class="hbtn fx-btn" aria-pressed="false" data-i18n-attr="title,aria-label" title="Focus mode: chat in full width, projects on the left, 3D scene off (Ctrl+\)" aria-label="Focus mode">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
+        </button>
         <h1 data-i18n>Crew</h1>
         <p data-i18n>Projects: click a room or a name to talk to that project's team.</p>
       </div>
@@ -98,8 +110,14 @@
           <div class="a-row"><span id="a-status" class="status st-idle" data-i18n>Idle</span><button type="button" id="linked-docs" class="a-linked" hidden></button></div>
         </div>
         <div class="head-actions menu">
+          <button id="btn-focus" class="hbtn fx-btn" aria-pressed="false" data-i18n-attr="title,aria-label" title="Focus mode: chat in full width, projects on the left, 3D scene off (Ctrl+\)" aria-label="Focus mode">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
+          </button>
           <button id="btn-reqs" class="hbtn" data-i18n-attr="title" title="Scope: requirements from the analysis document and their status">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h6M3 8h6M3 11.5h4"/><path d="M10.5 11l1.4 1.4L14.5 10"/></svg><span data-i18n>Scope</span><em id="reqs-badge"></em>
+          </button>
+          <button id="btn-tasks" class="hbtn" data-i18n-attr="title" title="Tasks: what the agents left for each other and for you">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="3.5" height="11" rx="1"/><rect x="7" y="2.5" width="3.5" height="7" rx="1"/><rect x="11.5" y="2.5" width="2.5" height="4" rx="1"/></svg><span data-i18n>Tasks</span><em id="tasks-badge"></em>
           </button>
           <button id="btn-code" class="hbtn" data-i18n-attr="title" title="Code editor: files, search (Ctrl+E)">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4 1.5 8l4 4M10.5 4l4 4-4 4"/></svg><span data-i18n>Code</span>
@@ -130,6 +148,7 @@
       <nav id="team-tabs" class="team-tabs" data-i18n-attr="aria-label" aria-label="Team"></nav>
 
       <div class="chat-wrap">
+        <button type="button" id="sticky-prompt" hidden data-i18n-attr="title" title="Your last prompt. Click to scroll to it"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4 12.5 8l-4 4"/></svg><span></span></button>
         <div id="chat" aria-live="polite"></div>
         <button type="button" id="jump" hidden data-i18n-attr="title,aria-label" title="Jump to the bottom" aria-label="Jump to the bottom"><svg viewBox="0 0 16 16"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg></button>
       </div>
@@ -158,7 +177,7 @@
             <button type="button" id="effort-btn" class="cb-pill" aria-haspopup="listbox" data-i18n-attr="title" title="Effort"><span id="effort-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
             <button type="button" id="perm-btn" class="cb-pill" aria-haspopup="listbox" data-i18n-attr="title" title="Permission"><span id="perm-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
             <span class="cb-spacer"></span>
-            <span id="ctx" class="ctx" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="ctx-bg" cx="10" cy="10" r="7.5"/><circle id="ctx-arc" class="ctx-fg" cx="10" cy="10" r="7.5"/></svg><span id="ctx-pct"></span></span>
+            <span id="ctx" class="ctx" role="button" tabindex="0" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="ctx-bg" cx="10" cy="10" r="7.5"/><circle id="ctx-arc" class="ctx-fg" cx="10" cy="10" r="7.5"/></svg><span id="ctx-pct"></span></span>
             <button type="button" id="btn-stop" class="send stop" hidden data-i18n-attr="title,aria-label" title="Stop" aria-label="Stop">
               <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>
             </button>
@@ -271,6 +290,28 @@
       </div>
       <div id="rn-probs" class="rn-probs" hidden></div>
     </main>
+  </div>
+</section>
+
+<section id="tasks" class="overlay" hidden data-i18n-attr="aria-label" aria-label="Tasks">
+  <header class="lib-top">
+    <button type="button" class="icon-btn" data-act="close" data-i18n-attr="title,aria-label" title="Back (Esc)" aria-label="Back"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+    <div class="lib-title"><h2><b data-i18n>Tasks</b> · <span id="tk-title"></span></h2><span id="tk-sum"></span></div>
+    <div id="tk-filter" class="tk-filter"></div>
+    <div class="rq-actions">
+      <button type="button" id="tk-startall" class="btn ghost sm" data-i18n-attr="title" title="Start the waiting tasks (one per role at a time)" data-i18n>Start waiting tasks</button>
+      <button type="button" id="tk-new" class="btn primary sm" data-i18n>+ Task</button>
+    </div>
+  </header>
+  <div class="tk-body">
+    <form id="tk-add" class="tk-add" hidden onsubmit="return false">
+      <input id="tk-in-title" data-i18n-attr="placeholder" placeholder="Task title" autocomplete="off">
+      <select id="tk-in-role" data-i18n-attr="aria-label" aria-label="Who"></select>
+      <select id="tk-in-prio" data-i18n-attr="aria-label" aria-label="Priority"><option value="normal" data-i18n>Normal</option><option value="high" data-i18n>High</option><option value="low" data-i18n>Low</option></select>
+      <textarea id="tk-in-detail" rows="2" data-i18n-attr="placeholder" placeholder="Details (optional)"></textarea>
+      <span><button type="button" id="tk-in-cancel" class="btn ghost sm" data-i18n>Cancel</button><button type="button" id="tk-in-save" class="btn primary sm" data-i18n>Add</button></span>
+    </form>
+    <div id="tk-board" class="tk-board"></div>
   </div>
 </section>
 

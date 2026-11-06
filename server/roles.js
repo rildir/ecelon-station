@@ -30,9 +30,9 @@ export const ROLES = {
     get label() { return t("Analyst"); }, order: 0,
     get desc() { return t("Reads the analysis document; extracts requirements, gaps and a work list. Does not change files."); },
     model: "claude-opus-5-5", effort: "high", permission: "acceptEdits",
-    disallow: [...EDIT_TOOLS, "Bash"], allow: [],
+    disallow: [...EDIT_TOOLS, ...FS_CMDS], allow: GIT_READ, // read-only git (show/diff/log/status) so the analyst can tell which commit changed what
     get note() {
-      return t("Your role in the team: ANALYST. You read the analysis documents in the document library and the existing code; you do not change files or run commands.") + " " +
+      return t("Your role in the team: ANALYST. You read the analysis documents in the document library and the existing code; you do not change files. The only commands you may run are read-only git commands (git show, git diff, git log, git status) to see exactly which commit changed what.") + " " +
         t("You extract the requirements, the ambiguities and the differences between the document and the code item by item, and give the developer an ordered, clear work list.") + " " +
         t("If you assume something that is not in the document, mark it explicitly as an 'assumption'.");
     },
@@ -84,6 +84,9 @@ export function roleArgs(agent, team = []) {
     t("Do not keep the team busy with small, one-line jobs. The task text must be understandable on its own (what changed, which files, what to verify).") + " " +
     t("After assigning a task, do NOT wait for the result and do not do the same work yourself: end your turn with a short note; the results come to you automatically in a 'Results from the team' message.") + " " +
     t("You can assign independent tasks at the same time. When the results arrive, fix things and reassign if needed; when the work is done, write the user a short summary.") : "";
+  // task board: hand over work instead of refusing it
+  const taskNote = solo ? "" : "\n\n" + t("TASK BOARD: If something is outside your role or you cannot do it (for example you may not run tests or commands, or a file is not yours to change), do NOT just tell the user 'I cannot'. Put it on the board with create_task (role: who must do it, or 'user' if only the person can), with clear steps, and carry on with what you can do.") + " " +
+    t("Check list_tasks for tasks waiting for you at the start of a job; when you finish one, call update_task (done, with a short result).");
   // requirement tracking (Scope): everyone can update the status, the analyst extracts the list
   const reqNote = solo ? "" : "\n\n" + t("REQUIREMENT TRACKING: The project may have a requirement list extracted from the analysis document (list_requirements).") + " " +
     t("The main goal is that items shown as 'done' in the document but not actually done are NOT OVERLOOKED. Saying 'done' is not verification; only the tester verifies an item, with evidence.") + " " +
@@ -111,7 +114,9 @@ export function roleArgs(agent, team = []) {
     : t("IMPORTANT: Your teammates are NOT Claude Code subagents or other Claude sessions. Do not use tools like Task/Agent/ListAgents/SendMessage; do your own work and report the result."));
   // The agent is told which language the user speaks (the Turkish entry of this key is simply "answer in Turkish")
   const langLine = t("Answer the user in {language}.", { language: langName() });
-  const body = note + lead + reqNote + sib + noSub;
+  // you run as `claude -p`: when your turn ends the process exits, background jobs die or are orphaned, and nobody wakes you up
+  const bgNote = "\n\n" + t("BACKGROUND WORK: Your turn ends when you stop writing; nothing wakes you up afterwards. Never say 'I am running it in the background' or 'I will report when it finishes' - you will not. Run long commands in the foreground and wait for them inside this turn (poll with short sleeps and read the log, e.g. every 60-120 s, up to the command's timeout). If a job truly cannot finish within a turn, start it detached, tell the user plainly that you will NOT be notified, give the exact log file to check, and ask them to send 'continue' when it is done.");
+  const body = note + lead + taskNote + bgNote + reqNote + sib + noSub;
   // An agent working alone stays fully authorized as before (behaves like the developer)
   return { note: langLine + (body ? "\n\n" + body : ""), disallow: solo ? [] : [...r.disallow, ...NO_SUBAGENTS], allow: r.allow };
 }

@@ -27,7 +27,8 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
   let dpr = DPR_MAX; renderer.setPixelRatio(dpr);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap; // PCF instead of soft shadows: looks almost the same, costs far less
-  // shadow pass runs every frame: with three >= 0.18x the PCF sampler is invalid on frames where the pass is skipped (GL_INVALID_OPERATION)
+  renderer.info.autoReset = true;
+  renderer.shadowMap.autoUpdate = false; // the shadow map is updated at intervals, not every frame (see frame)
   renderer.localClippingEnabled = true;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.1;
@@ -48,7 +49,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
     cam.lookAt(target); cam.updateProjectionMatrix();
   }
   // The canvas is cleared when its size changes; unless we redraw at the same time one frame shows empty (flicker)
-  new ResizeObserver(() => { resize(); if (kit.ready) renderer.render(scene, cam); slowFrames = 0; resizingUntil = performance.now() + 400; }).observe(canvas);
+  new ResizeObserver(() => { resize(); if (kit.ready) { renderer.shadowMap.needsUpdate = true; renderer.render(scene, cam); } slowFrames = 0; resizingUntil = performance.now() + 400; }).observe(canvas);
 
   // ---- light (only two lights, fixed)
   scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x30364a, 1.6));
@@ -682,7 +683,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
 
   // ---- animation loop (no object creation per frame)
   const dV = new THREE.Vector3(), goalV = new THREE.Vector3();
-  const timer = new THREE.Timer();
+  const clock = new THREE.Clock();
   function adaptResolution(dt, target) {
     if (performance.now() < resizingUntil || !document.hasFocus()) return; // do not measure while the panel is being dragged / in the background
     // if the frame time clearly exceeds the target 30 times lower the resolution; raise it again after a long calm stretch
@@ -690,10 +691,10 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
     if (slowFrames > 30 && dpr > 1) { dpr = Math.max(1, dpr - 0.25); renderer.setPixelRatio(dpr); resize(); slowFrames = 0; }
     if (fastFrames > 240 && dpr < DPR_MAX) { dpr = Math.min(DPR_MAX, dpr + 0.25); renderer.setPixelRatio(dpr); resize(); fastFrames = 0; }
   }
-  let paused = false;
+  let paused = false, held = false;
   // Frame rate: 60 during interaction (dragging, camera, mouse over); 30 when calm; 10 when the window is in the background.
   // Drawing every frame while the scene was calm ate into the UI's (chat, editor) share.
-  let lastDraw = 0, hot = 0;
+  let lastDraw = 0, shadowTick = 0, hot = 0;
   const poke = () => { hot = performance.now() + 1500; };
   for (const e of ["pointermove", "pointerdown", "wheel"]) canvas.addEventListener(e, poke, { passive: true });
   let frameErrs = 0;
@@ -708,8 +709,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
     const fps = !document.hasFocus() ? 10 : busy ? 60 : 30;
     if (nowT - lastDraw < 1000 / fps - 2) return;
     lastDraw = nowT;
-    timer.update();
-    const dt = Math.min(timer.getDelta(), 0.1), t = timer.getElapsed();
+    const dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
     adaptResolution(dt, 1 / fps);
     if (hoverQueued) { const ev = hoverQueued; hoverQueued = null; const id = pick(ev); onHover(id, ev.clientX, ev.clientY); }
     if (camGoal.target || camGoal.zoom) {
@@ -719,10 +719,11 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
       resize();
     }
     const now = performance.now();
+    let moved = !!drag?.room; // shadows depend only on what MOVES (the camera does not change them)
     for (const g of modules.values()) {
       const u = g.userData;
       // slot change: glide home; update the cutaway planes only when the position changes
-      if (g.position.distanceToSquared(u.home) > 1e-4) g.position.lerp(u.home, Math.min(1, dt * 10));
+      if (g.position.distanceToSquared(u.home) > 1e-4) { g.position.lerp(u.home, Math.min(1, dt * 10)); moved = true; }
       if (g.position.x !== u.lastX || g.position.y !== u.lastY || g.position.z !== u.lastZ) {
         u.lastX = g.position.x; u.lastY = g.position.y; u.lastZ = g.position.z;
         setPlanes(u.cut.planes, u.lastX, u.lastY, u.lastZ);
@@ -762,7 +763,9 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
         else { m.yaw = angLerp(m.yaw, face, dt * 4); play(ch, "idle"); }
         ch.wrap.position.set(m.cur.x, sit ? sitY : 0, m.cur.z);
         ch.wrap.rotation.y = m.yaw;
-        ch.mixer?.update(dt);
+        // a walking character animates every frame; a seated/idle one 15 times a second (10 rooms × 4 members add up)
+        m.acc = (m.acc || 0) + dt;
+        if (ch.mixer && (dist > 0.05 || m.acc >= 1 / 15)) { ch.mixer.update(m.acc); m.acc = 0; }
         m.plumb.position.set(m.cur.x, 3.9 + Math.sin(tt * 2) * 0.12, m.cur.z); m.plumb.rotation.y = tt * 1.5;
         m.pbMat.emissiveIntensity = working ? 1.1 + Math.sin(tt * 6) * 0.5 : 0.8;
         m.bubble.sprite.position.set(m.cur.x, 4.7 + (k % 2) * 1.1, m.cur.z); // just above the head; stays below the room name
@@ -775,6 +778,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
         u.leds.instanceColor.needsUpdate = true;
       }
     }
+    if (++shadowTick % 3 === 0 || moved) renderer.shadowMap.needsUpdate = true; // the shadow pass doubles the draw calls: ~10-20 Hz, every frame only while a room glides
     renderer.render(scene, cam);
   }
   resize(); requestAnimationFrame(frame);
@@ -787,9 +791,11 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {} 
     setActivity(id, text) { activities.set(id, text); moduleOf(id)?.userData.members.get(id)?.bubble.set(text); },
     select(id) { selectedId = id; updateSelection(); },
     // stop drawing while a full-screen view (document library) covers the scene
-    pause(on) { if (on === paused) return; paused = on; if (!on) { timer.update(); requestAnimationFrame(frame); } },
+    // hold: the scene stays off (focus mode) whatever else asks to pause or resume it
+    hold(on) { held = on; if (on) { if (!paused) { paused = true; } } else if (paused) { paused = false; clock.getDelta(); requestAnimationFrame(frame); } },
+    pause(on) { if (held) on = true; if (on === paused) return; paused = on; if (!on) { clock.getDelta(); requestAnimationFrame(frame); } },
     focus: focusAgent, fit: () => fitAll(true),
     zoomIn: () => { camGoal.zoom = clampZoom((camGoal.zoom || zoom) / 1.3); }, zoomOut: () => { camGoal.zoom = clampZoom((camGoal.zoom || zoom) * 1.3); },
-    stats: () => ({ dpr, ...renderer.info.render, programs: renderer.info.programs?.length, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures }),
+    stats: () => ({ dpr, paused, rooms: modules.size, ...renderer.info.render, programs: renderer.info.programs?.length, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures }),
   };
 }
