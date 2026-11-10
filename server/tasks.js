@@ -45,3 +45,13 @@ export function summary(team) {
   const it = load(team).items; const open = it.filter((x) => x.status !== "done");
   return { total: it.length, open: open.length, doing: it.filter((x) => x.status === "doing").length, toUser: open.filter((x) => x.role === "user").length };
 }
+// counts per status plus what was finished today (for the office: whiteboard notes, printer report)
+export function counts(team, since = 0, oldBefore = 0) {
+  const it = load(team).items; const o = { todo: 0, doing: 0, done: 0, blocked: 0, doneSince: 0, toUser: 0, old: 0 };
+  for (const x of it) {
+    o[x.status] = (o[x.status] || 0) + 1; if (x.status === "done" && x.updatedAt >= since) o.doneSince++;
+    if (x.status !== "done" && x.role === "user") o.toUser++;
+    if (x.status !== "done" && oldBefore && x.updatedAt < oldBefore) o.old++; // open and untouched for days
+  }
+  return o;
+}

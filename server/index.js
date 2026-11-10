@@ -1139,6 +1139,134 @@ app.get("/api/reqs/:team", (req, res) => {
   if (staled) { const l = listAgents().find((x) => (x.team || x.id) === req.params.team && roleOf(x) === "dev"); if (l) teamEvent(l.id, { kind: "note", text: "⚠ " + t("The evidence file of {n} verified items changed; they need re-verification.", { n: staled }) }); }
   res.json({ ...data, items: data.items.map((x) => ({ ...x, mismatch: reqs.isMismatch(x) })) });
 });
+// The office at a glance (3D room props): task and requirement counts per team. Cheap on purpose: no evidence
+// re-hashing, no coverage computation; the room only needs the numbers.
+// what a project is built with, from the files in its folder (the posters on the room's wall)
+const stackCache = new Map();
+function stackOf(cwd) {
+  if (!cwd) return [];
+  const hit = stackCache.get(cwd); if (hit && Date.now() - hit.at < 600000) return hit.v;
+  const has = (f) => { try { return fs.existsSync(path.join(cwd, f)); } catch { return false; } };
+  const any = (re) => { try { return fs.readdirSync(cwd).some((f) => re.test(f)); } catch { return false; } };
+  const v = [];
+  try {
+    if (has("package.json")) {
+      const pj = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8")), d = { ...pj.dependencies, ...pj.devDependencies };
+      if (d["@angular/core"]) v.push("angular"); if (d.react || d.next) v.push(d.next ? "next" : "react"); if (d.vue || d.nuxt) v.push("vue"); if (d.svelte) v.push("svelte");
+      if (d["@nestjs/core"]) v.push("nest"); else if (d.express || d.fastify || d.koa) v.push("node");
+      if (d.three) v.push("three"); if (d.electron) v.push("electron"); if (d["react-native"] || d.expo) v.push("reactnative");
+      if (d.typescript && !v.length) v.push("typescript"); if (!v.length) v.push("node");
+    }
+    if (any(/\.csproj$|\.sln$/)) v.push("dotnet");
+    if (has("project.godot")) v.push("godot");
+    if (has("composer.json") || any(/\.php$/)) v.push("php");
+    if (has("pyproject.toml") || has("requirements.txt")) v.push("python");
+    if (has("go.mod")) v.push("go"); if (has("Cargo.toml")) v.push("rust");
+    if (has("pubspec.yaml")) v.push("flutter"); if (has("build.gradle") || has("build.gradle.kts")) v.push("android");
+    if (has("manifest.json") && !v.includes("angular") && !v.includes("react")) v.push("chrome");
+    if (has("Dockerfile") || has("docker-compose.yml")) v.push("docker");
+  } catch {}
+  const out = [...new Set(v)].slice(0, 3); stackCache.set(cwd, { v: out, at: Date.now() }); return out;
+}
+app.get("/api/overview", (req, res) => {
+  const since = Number(req.query.since) || 0, old = Number(req.query.old) || 0; const out = {};
+  for (const l of listAgents().filter((x) => roleOf(x) === "dev")) {
+    const team = l.team || l.id;
+    let r = null; try { r = reqs.summary(team); } catch {}
+    out[team] = { stack: stackOf(l.cwd), tasks: tasks.counts(team, since, old), reqs: r ? { total: r.total, done: r.done, failed: r.failed, stale: r.stale, mismatches: r.mismatches } : null };
+  }
+  res.json(out);
+});
+const CODE_RE = /\b([A-Z]{1,3}-\d{3})\b/g;
+// Both the replay and the payroll read whole conversation logs. Parsing megabytes of JSON on every request blocks the
+// server (and with it every live stream) for a moment, so each log is digested once into slim records and after that
+// only the lines appended since are read.
+const DIGEST_MAX = 8000, DIGEST_FIRST_READ = 24 * 1024 * 1024;
+const digests = new Map(); // file → { size, evs }
+function logDigest(file) {
+  let st; try { st = fs.statSync(file); } catch { digests.delete(file); return []; }
+  let c = digests.get(file);
+  if (c && st.size === c.size) return c.evs;
+  if (!c || st.size < c.size) c = { size: Math.max(0, st.size - DIGEST_FIRST_READ), evs: [], cut: st.size > DIGEST_FIRST_READ }; // new, or the file was rewritten
+  const fd = fs.openSync(file, "r"); let text;
+  try { const len = st.size - c.size, buf = Buffer.alloc(len); fs.readSync(fd, buf, 0, len, c.size); const end = buf.lastIndexOf(10) + 1; text = buf.toString("utf8", 0, end); c.size += end; } finally { fs.closeSync(fd); }
+  const short = (v, n) => (typeof v === "string" ? v.slice(0, n) : v == null ? undefined : String(v).slice(0, n));
+  let lines = text.split("\n"); if (c.cut) { lines = lines.slice(1); c.cut = false; }
+  for (const line of lines) {
+    if (!line) continue;
+    let e; try { e = JSON.parse(line); } catch { continue; }
+    if (!e.t) continue;
+    if (e.type === "user") c.evs.push({ t: e.t, k: "user", codes: String(e.text || "").match(CODE_RE) || [] });
+    else if (e.type === "tool_use") {
+      const i = e.input || {};
+      c.evs.push({ t: e.t, k: "tool", name: e.name, id: e.toolUseId, file: short(i.file_path, 260), cmd: short(i.command, 300), desc: short(i.description, 80),
+        code: short(e.name === "Write" ? i.content : e.name === "Edit" ? i.new_string : e.name === "MultiEdit" ? i.edits?.[0]?.new_string : undefined, 700),
+        codes: [...(i.code ? [i.code] : []), ...(Array.isArray(i.codes) ? i.codes : [])] });
+    } else if (e.type === "tool_result") c.evs.push({ t: e.t, k: "res", id: e.toolUseId, err: !!e.isError, out: typeof e.content === "string" ? e.content.slice(-600) : undefined });
+    else if (e.type === "text") { const codes = String(e.text || "").match(CODE_RE); if (codes) c.evs.push({ t: e.t, k: "text", codes }); }
+    else if (e.type === "result") c.evs.push({ t: e.t, k: "end", err: !!e.isError, costUsd: Number(e.costUsd) || 0, durationMs: Number(e.durationMs) || 0, turns: Number(e.numTurns) || 0 });
+    else if (e.type === "team" && (e.kind === "delegate" || e.kind === "result")) c.evs.push({ t: e.t, k: e.kind, to: e.to, from: e.from });
+  }
+  if (c.evs.length > DIGEST_MAX) c.evs = c.evs.slice(-DIGEST_MAX);
+  digests.set(file, c);
+  return c.evs;
+}
+const breathe = () => new Promise((r) => setImmediate(r)); // let live streams through between two files
+// The day of a room, light enough to replay in the office (the TV): who worked when, hand-offs, files written,
+// commands and whether they failed. Read from the conversation logs that already exist; nothing new is recorded.
+app.get("/api/replay/:team", async (req, res) => {
+  const since = Number(req.query.since) || Date.now() - 86400000;
+  const members = listAgents().filter((x) => (x.team || x.id) === req.params.team);
+  const out = [];
+  for (const m of members) {
+    for (const c of m.convs || []) {
+      if ((c.updatedAt || 0) < since && c.id !== m.activeConv) continue;
+      const fresh = !digests.has(logFile(m.id, c.id));
+      for (const e of logDigest(logFile(m.id, c.id))) {
+        if (e.t < since || e.k === "text") continue;
+        if (e.k === "user") out.push({ t: e.t, a: m.id, k: "user" });
+        else if (e.k === "end") out.push({ t: e.t, a: m.id, k: "end", err: e.err });
+        else if (e.k === "tool") out.push({ t: e.t, a: m.id, k: "tool", name: e.name, id: e.id, file: e.file, cmd: e.cmd, desc: e.desc, code: e.code });
+        else out.push({ ...e, a: m.id });
+      }
+      if (fresh) await breathe();
+    }
+  }
+  out.sort((x, y) => x.t - y.t);
+  res.json(out.slice(-5000));
+});
+// Payroll: what each member of a team cost over a period, and that cost spread over the requirement items the runs
+// touched (the items named in the prompt, set/verified by the requirement tools, or named in the reply).
+app.get("/api/payroll/:team", async (req, res) => {
+  const since = Number(req.query.since) || Date.now() - 7 * 86400000;
+  const members = listAgents().filter((x) => (x.team || x.id) === req.params.team);
+  const perMember = {}, perItem = {};
+  for (const m of members) {
+    const pm = perMember[m.id] = { id: m.id, name: m.name, role: roleOf(m), costUsd: 0, runs: 0, durationMs: 0, turns: 0 };
+    for (const c of m.convs || []) {
+      if ((c.updatedAt || 0) < since && c.id !== m.activeConv) continue;
+      const fresh = !digests.has(logFile(m.id, c.id));
+      let codes = new Set();
+      for (const e of logDigest(logFile(m.id, c.id))) {
+        if (e.t < since) continue;
+        if (e.k === "user") codes = new Set(e.codes);
+        else if (e.k === "tool" || e.k === "text") { for (const k of e.codes || []) codes.add(k); }
+        else if (e.k === "end") {
+          const cost = e.costUsd;
+          pm.costUsd += cost; pm.runs++; pm.durationMs += e.durationMs; pm.turns += e.turns;
+          if (codes.size) { const share = cost / codes.size; for (const k of codes) { const it = perItem[k] || (perItem[k] = { code: k, costUsd: 0, runs: 0, members: {} }); it.costUsd += share; it.runs++; it.members[pm.role] = (it.members[pm.role] || 0) + share; } }
+          codes = new Set();
+        }
+      }
+      if (fresh) await breathe();
+    }
+    pm.costUsd = +pm.costUsd.toFixed(4);
+  }
+  // item titles from the requirement list, when there is one
+  let titles = {}; try { for (const it of reqs.load(req.params.team).items) titles[it.code] = { title: it.title, status: it.status, verified: it.verify?.state }; } catch {}
+  const items = Object.values(perItem).map((it) => ({ ...it, costUsd: +it.costUsd.toFixed(4), ...(titles[it.code] || {}) })).sort((a, b) => b.costUsd - a.costUsd);
+  res.json({ since, members: Object.values(perMember), items, totalUsd: +Object.values(perMember).reduce((s, m) => s + m.costUsd, 0).toFixed(4) });
+});
 app.get("/api/reqs/:team/summary", (req, res) => {
   const cwd = teamCwd(req.params.team); if (cwd) reqs.refreshStale(req.params.team, cwd);
   res.json({ ...reqs.summary(req.params.team), coverage: cov.compute(req.params.team, reqs.load(req.params.team).items).stats });
@@ -1171,7 +1299,9 @@ function notify(agentId, result) {
   const a = getAgent(agentId); if (!a) return;
   { // a state that needs attention: shown in the list and the header; cleared by a new message
     const d = result.permissionDenials || [];
-    const att = d.length ? { kind: "permission", text: t("Awaiting permission: {tools}", { tools: d.map((x) => x.spec || x.tool).slice(0, 2).join(", ") }), at: Date.now() } : result.isError && result.subtype !== "interrupted" ? { kind: "error", text: t("Finished with an error"), at: Date.now() } : null;
+    const att = d.length ? { kind: "permission", text: t("Awaiting permission: {tools}", { tools: d.map((x) => x.spec || x.tool).slice(0, 2).join(", ") }), at: Date.now(),
+      // what exactly was refused: the approval queue in the office grants these without opening the chat
+      specs: [...new Set(d.flatMap((x) => x.specs || [x.spec]).filter(Boolean))].slice(0, 12), items: d.slice(0, 6).map((x) => ({ tool: x.tool, what: String(x.input?.command || x.input?.file_path || x.spec || "").slice(0, 300) })) } : result.isError && result.subtype !== "interrupted" ? { kind: "error", text: t("Finished with an error"), at: Date.now() } : null;
     if (att || a.attention) { try { updateAgent(agentId, { attention: att }); broadcast({ type: "agents_changed" }); } catch {} }
   }
   if (taskOwner.has(agentId)) return;
@@ -1181,9 +1311,12 @@ function notify(agentId, result) {
   const kind = denials.length ? "permission" : result.isError ? "error" : "done";
   const team = teamOf(agentId);
   const who = team.length > 1 && roleOf(a) !== "dev" ? `${a.name} · ${ROLES[roleOf(a)].label}` : a.name;
-  const first = (lastResult(agentId, 400) || "").replace(/[#*`>|_]/g, "").replace(/\s+/g, " ").trim().slice(0, 140);
+  const first = headline(agentId);
   const body = kind === "permission" ? t("Awaiting permission: {tools}", { tools: denials.map((d) => d.spec || d.tool).slice(0, 2).join(", ") }) : kind === "error" ? `${t("Finished with an error.")} ${first}` : first || t("Done.");
-  const ev = { type: "notify", agentId, kind, title: who, body };
+  // enough for the notification centre to say what happened without opening the chat
+  const lead = team.find((x) => roleOf(x) === "dev") || a;
+  const ev = { type: "notify", agentId, kind, title: who, body, room: lead.name, role: roleOf(a), durationMs: Number(result.durationMs) || 0, turns: Number(result.numTurns) || 0, costUsd: Number(result.costUsd) || 0,
+    specs: kind === "permission" ? [...new Set(denials.flatMap((d) => d.specs || [d.spec]).filter(Boolean))].slice(0, 12) : undefined };
   broadcast(ev);
   if (wss.clients.size === 0) windowsToast(`Ecelon · ${who}`, body);
 }
@@ -1252,6 +1385,19 @@ async function maybeContinue(leadId) {
 
 
 // The latest reply text in an agent's active conversation (what it wrote after the last user message)
+// One line that says what a run ended with: the first sentence of the final reply (not a slice from its middle).
+function headline(agentId, max = 170) {
+  const a = getAgent(agentId); if (!a) return "";
+  const evs = readLog(agentId, 400, a.activeConv);
+  let i = evs.length - 1; while (i >= 0 && evs[i].type !== "user") i--;
+  const texts = evs.slice(i + 1).filter((e) => e.type === "text" && e.text).map((e) => e.text);
+  const last = texts[texts.length - 1] || "";
+  const plain = last.replace(/```[\s\S]*?```/g, " ").split("\n").map((l) => l.trim()).filter((l) => l && !/^[|#>-]{1,3}\s*$/.test(l) && !/^\|/.test(l))
+    .join(" ").replace(/[#*`>|_]/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\s+/g, " ").trim();
+  const m = /^(.{20,}?[.!?])(\s|$)/.exec(plain);
+  const out = m && m[1].length <= max ? m[1] : plain.slice(0, max);
+  return out.length < plain.length && !/[.!?]$/.test(out) ? out.replace(/\s+\S*$/, "") + "…" : out;
+}
 function lastResult(agentId, max = 6000) {
   const a = getAgent(agentId); if (!a) return "";
   const evs = readLog(agentId, 400, a.activeConv);

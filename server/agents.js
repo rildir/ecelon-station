@@ -20,9 +20,13 @@ export const PERMISSIONS = ["acceptEdits", "plan", "bypassPermissions"];
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
 let loadedOk = false;
+// load() runs many times per stream event; the file is re-read only when it changed on disk. Every caller still gets
+// its own parsed copy, so nobody can change the list without saving it.
+let cached = null; // { mtimeMs, size, text }
 function load() {
-  if (!fs.existsSync(FILE)) { loadedOk = true; return []; }
-  try { const l = JSON.parse(fs.readFileSync(FILE, "utf8")); loadedOk = true; return l; }
+  let st; try { st = fs.statSync(FILE); } catch { cached = null; loadedOk = true; return []; }
+  if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) return JSON.parse(cached.text);
+  try { const text = fs.readFileSync(FILE, "utf8"), l = JSON.parse(text); cached = { mtimeMs: st.mtimeMs, size: st.size, text }; loadedOk = true; return l; }
   catch (e) {
     // corrupt file: do not overwrite it and lose the project list; back it up and use the last good backup if there is one
     try { fs.copyFileSync(FILE, FILE + ".bozuk-" + Date.now()); } catch {}
@@ -38,6 +42,7 @@ function save(list) {
   writePrivate(tmp, JSON.stringify(list, null, 2));
   try { if (fs.existsSync(FILE)) { fs.copyFileSync(FILE, FILE + ".bak"); fs.chmodSync(FILE + ".bak", 0o600); } } catch {}
   fs.renameSync(tmp, FILE);
+  cached = null;
 }
 
 // Every agent gets a permanent character (0–17); older ones keep their current look (index number)
