@@ -1,5 +1,6 @@
 import { createStation, CHARACTERS } from "./scene.js";
 import { createLibrary, badge, KIND } from "./library.js";
+import { sfx } from "./sounds.js";
 import { createReqs } from "./reqs.js";
 import { createTasks } from "./tasks.js";
 import { createGit } from "./gitui.js";
@@ -167,6 +168,10 @@ const indexOf = (id) => agents.findIndex((x) => x.id === id);
 
 const station = createStation($("#scene"), {
   onSelect: (id) => selectAgent(id),
+  onProp: (tk, kind) => onProp(tk, kind),
+  propTip: (tk, kind) => propTip(tk, kind),
+  boardLabels: [t("To do"), t("In progress"), t("Done")],
+  peekLabel: (id) => { const a = agents.find((x) => x.id === id); return a ? roleLabel(a) : ""; },
   // swap two rooms
   onReorder: async (a, b) => { // a, b: team (room) keys
     const order = teamOrder(), i = order.indexOf(a), j = order.indexOf(b);
@@ -185,7 +190,7 @@ const station = createStation($("#scene"), {
     tip.textContent = `${agentLabel(a)}: ${STATUS_TEXT[a.status] || t("Idle")}`;
   },
 });
-window.__station = station; // for debugging
+window.__station = station; window.__pick = (id) => selectAgent(id); // for debugging
 
 // ================= document library =================
 const lib = createLibrary({
@@ -259,7 +264,7 @@ $("#btn-reqs").onclick = () => current() && reqsUI.open(current());
 let gitSum = {};
 async function refreshGitSummary() {
   gitSum = await api("/api/git/summary").catch(() => gitSum);
-  renderGitBadge(); renderList();
+  renderGitBadge(); renderList(); pushOffice();
 }
 function renderGitBadge(a = current()) {
   const b = $("#git-badge"); if (!a || !b) return;
@@ -313,6 +318,490 @@ $("#btn-code").onclick = () => openCode();
 let gitT; const gitSoon = () => { clearTimeout(gitT); gitT = setTimeout(refreshGitSummary, 1200); };
 setInterval(refreshGitSummary, 45000);
 
+// ================= the office shows the real state =================
+// papers on the lead's desk = uncommitted changes, boxes by the door = unpushed commits, the plant = health
+// (verified scope), the whiteboard = task board, the printer = today's report; members waiting for permission
+// queue at the door and the approval queue on the stage grants it without opening the chat.
+let overview = {};
+const dayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const DAY = 86400000;
+async function refreshOverview() { overview = await api(`/api/overview?since=${dayStart()}&old=${Date.now() - 3 * DAY}`).catch(() => overview); pushOffice(); }
+// neglect 0..1: tasks open and untouched for 3+ days, evidence that went stale, document/code mismatches, a huge pile of uncommitted changes
+function wearOf(tk) {
+  const ov = overview[tk] || {}, r = ov.reqs || {}, gs = gitSum[tk] || {};
+  return Math.min(1, (ov.tasks?.old || 0) * 0.12 + (r.stale || 0) * 0.06 + (r.mismatches || 0) * 0.05 + (gs.changed > 150 ? 0.35 : gs.changed > 60 ? 0.15 : 0));
+}
+let ovT; const overviewSoon = () => { clearTimeout(ovT); ovT = setTimeout(refreshOverview, 800); };
+setInterval(refreshOverview, 60000);
+const leadOfTeam = (tk) => agents.find((x) => teamKey(x) === tk && roleOf(x) === "dev") || agents.find((x) => teamKey(x) === tk);
+function healthOf(tk) {
+  const r = overview[tk]?.reqs, team = agents.filter((x) => teamKey(x) === tk);
+  const sick = !!(r && (r.failed || 0) > 0) || team.some((m) => m.status === "error" || m.attention?.kind === "error");
+  return { ratio: r?.total ? r.done / r.total : null, sick };
+}
+// payroll: what the team cost this week (Monday onwards), per member
+const payroll = new Map(); // team → /api/payroll result
+const weekStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
+const money = (usd) => (usd >= 100 ? `$${Math.round(usd)}` : usd >= 10 ? `$${usd.toFixed(1)}` : `$${usd.toFixed(2)}`);
+const ROLE_COLOR = { dev: "#f6a23a", tester: "#6cc6ff", analyst: "#b48cff", reviewer: "#7bd88f" };
+async function refreshPayroll() {
+  await Promise.all(teamOrder().map(async (tk) => { try { payroll.set(tk, await api(`/api/payroll/${encodeURIComponent(tk)}?since=${weekStart()}`)); } catch {} }));
+  pushOffice();
+}
+setInterval(refreshPayroll, 120000);
+function payrollBoard(tk) {
+  const p = payroll.get(tk); if (!p) return null;
+  const rows = p.members.filter((m) => m.costUsd > 0).sort((a, b) => b.costUsd - a.costUsd).map((m) => ({ name: meta.roles?.[m.role]?.label || m.name, usd: m.costUsd, money: money(m.costUsd), color: ROLE_COLOR[m.role] }));
+  return { title: t("PAYROLL · THIS WEEK"), total: p.totalUsd ? money(p.totalUsd) : "", rows, empty: t("Nothing spent this week") };
+}
+function pushOffice() {
+  for (const tk of teamOrder()) {
+    const gs = gitSum[tk], ov = overview[tk] || {};
+    station.setOffice(tk, { changed: gs?.ok ? gs.changed : 0, ahead: gs?.ok ? gs.ahead : 0, health: healthOf(tk), tasks: ov.tasks || null, report: !!ov.tasks?.doneSince, wear: Math.round(wearOf(tk) * 20) / 20, payroll: payrollBoard(tk), stack: ov.stack || [] });
+  }
+  for (const a of agents) station.setAttention(a.id, a.attention?.kind === "permission" && !isBusy(a));
+  { const n = agents.filter((a) => a.attention?.kind === "permission" && !isBusy(a)).length; if (n > (pushOffice.perm || 0)) sfx.play("permission"); pushOffice.perm = n; }
+  renderInbox(); catSoon();
+}
+// the office cat goes where you are needed: permission > broken tests > an error > someone at work > a nap
+const testFailed = new Set(); // rooms whose last test run failed
+let catFocus, catT = 0; // undefined until the first decision (so a calm start still places the napping cat)
+const catSoon = () => { clearTimeout(catT); catT = setTimeout(updateCat, 300); };
+function updateCat() {
+  const pick = () => {
+    const perm = agents.find((a) => a.attention?.kind === "permission" && !isBusy(a));
+    if (perm) return { teamId: teamKey(perm), memberId: perm.id, alert: true, why: "permission" };
+    const tf = [...testFailed][0]; if (tf && agents.some((a) => teamKey(a) === tf)) return { teamId: tf, memberId: null, alert: true, why: "tests" };
+    const err = agents.find((a) => a.status === "error" || a.attention?.kind === "error");
+    if (err) return { teamId: teamKey(err), memberId: err.id, alert: true, why: "error" };
+    const busy = agents.find(isBusy);
+    if (busy) return { teamId: teamKey(busy), memberId: busy.id, alert: false, why: "work" };
+    return null;
+  };
+  const f = pick(); const k = JSON.stringify(f);
+  if (catFocus !== undefined && k === JSON.stringify(catFocus)) return;
+  catFocus = f; station.setCat(f);
+}
+function propTip(tk, kind) {
+  const lead = leadOfTeam(tk); if (!lead) return "";
+  const ov = overview[tk] || {}, gs = gitSum[tk] || {}, tasks = ov.tasks || {}, r = ov.reqs;
+  const text = {
+    board: () => t("Task board: {todo} to do · {doing} in progress · {done} done", { todo: (tasks.todo || 0) + (tasks.blocked || 0), doing: tasks.doing || 0, done: tasks.done || 0 }),
+    git: () => t("Git: {n} {n|change|changes} not committed · {m} {m|commit|commits} not pushed", { n: gs.changed || 0, m: gs.ahead || 0 }),
+    plant: () => { const h = healthOf(tk); return (r?.total ? t("Health: {done}/{total} requirements verified", { done: r.done, total: r.total }) : t("Health: no scope yet")) + (h.sick ? " · " + t("needs care (a failed verification or an error)") : ""); },
+    printer: () => t("Today's report: {n} {n|task|tasks} done today", { n: tasks.doneSince || 0 }),
+    docs: () => t("Documents of this project"),
+    coffee: () => t("Coffee break: stop everyone working in this room"),
+    rack: () => t("Run: commands, output, terminal"),
+    tv: () => t("TV: replay today in this room"),
+    payroll: () => { const p = payroll.get(tk); return p ? t("Payroll: {total} this week, {n} {n|run|runs} · click for the cost per requirement", { total: money(p.totalUsd), n: p.members.reduce((s, m) => s + m.runs, 0) }) : t("Payroll"); },
+    cat: () => {
+      const f = catFocus, m = f?.memberId && agents.find((x) => x.id === f.memberId);
+      return !f ? t("The office cat is napping: nothing needs you right now")
+        : f.why === "permission" ? t("The cat found {who} waiting for your permission", { who: agentLabel(m) })
+        : f.why === "tests" ? t("The cat is sitting by the server rack: the last test run failed")
+        : f.why === "error" ? t("The cat found an error at {who}", { who: agentLabel(m) })
+        : t("The cat is watching {who} work", { who: agentLabel(m) });
+    },
+    wear: () => { const r = ov.reqs || {}, bits = []; if (tasks.old) bits.push(t("{n} {n|task|tasks} untouched for 3+ days", { n: tasks.old })); if (r.stale) bits.push(t("{n} stale {n|verification|verifications}", { n: r.stale })); if (r.mismatches) bits.push(t("{n} {n|mismatch|mismatches}", { n: r.mismatches })); if (gs.changed > 60) bits.push(t("{n} uncommitted changes", { n: gs.changed })); return t("Needs tidying: {what}", { what: bits.join(", ") || "–" }); },
+  }[kind] || (kind.startsWith("screen:") ? () => { const m = agents.find((x) => teamKey(x) === tk && roleOf(x) === kind.slice(7)); return m ? t("{role}'s screen: click to lean in", { role: roleLabel(m) }) : ""; } : null);
+  return text ? `${lead.name} · ${text()}` : "";
+}
+async function onProp(tk, kind) {
+  const lead = leadOfTeam(tk); if (!lead) return;
+  if (kind === "coffee") return coffeeBreak(tk);
+  if (kind === "cat") { // take me there
+    const f = catFocus; if (!f) { toast(t("Purr. Everything is calm.")); return; }
+    const id = f.memberId || leadOfTeam(f.teamId)?.id; if (!id) return;
+    await selectAgent(id); station.focus(id);
+    if (f.why === "tests") $("#btn-run")?.click();
+    return;
+  }
+  if (kind === "printer") return dayReport(tk);
+  if (kind === "tv") return playReplay(tk);
+  if (kind === "payroll") return openPayroll(tk);
+  if (kind === "docs") { lib.open({ agentId: lead.id }); return; }
+  if (!current() || teamKey(current()) !== tk) await selectAgent(lead.id);
+  const btn = { board: "#btn-tasks", git: "#btn-git", plant: "#btn-reqs", rack: "#btn-run", wear: "#btn-tasks" }[kind];
+  if (btn && !$(btn).hidden) $(btn).click();
+}
+async function coffeeBreak(tk) {
+  const team = agents.filter((x) => teamKey(x) === tk), busy = team.filter(isBusy), lead = leadOfTeam(tk);
+  if (!busy.length) { toast(t("Nobody is working in {name}; enjoy the coffee", { name: lead.name })); return; }
+  const ok = await confirmBox({ title: t("Coffee break in {name}?", { name: lead.name }), body: t("{n} {n|agent stops|agents stop} working: {who}. The conversations stay; send 'continue' to pick up again.", { n: busy.length, who: busy.map((m) => roleLabel(m)).join(", ") }), ok: t("Stop and take a break"), danger: true });
+  if (!ok) return;
+  await Promise.all(busy.map((m) => api(`/api/agents/${m.id}/stop`, { method: "POST" }).catch(() => {})));
+  sfx.play("coffee"); toast(t("Break: {name} stopped", { name: lead.name }));
+}
+async function dayReport(tk) {
+  const lead = leadOfTeam(tk), team = agents.filter((x) => teamKey(x) === tk), ov = overview[tk] || {}, gs = gitSum[tk] || {}, r = ov.reqs;
+  const all = await api(`/api/tasks/${encodeURIComponent(tk)}`).then((d) => d.items || []).catch(() => []);
+  const since = dayStart(), doneToday = all.filter((x) => x.status === "done" && x.updatedAt >= since), open = all.filter((x) => x.status !== "done");
+  const L = [];
+  L.push(`${lead.name} — ${new Date().toLocaleDateString(locale(), { day: "numeric", month: "long", weekday: "long" })}`, "");
+  L.push(t("Done today ({n}):", { n: doneToday.length }));
+  for (const x of doneToday.slice(0, 12)) L.push(`  ✓ ${x.id} ${x.title}`);
+  if (!doneToday.length) L.push("  –");
+  L.push("", t("Still open: {n} ({doing} in progress, {blocked} blocked, {user} waiting for you)", { n: open.length, doing: open.filter((x) => x.status === "doing").length, blocked: open.filter((x) => x.status === "blocked").length, user: open.filter((x) => x.role === "user").length }));
+  if (r?.total) L.push(t("Scope: {done}/{total} verified{failed}", { done: r.done, total: r.total, failed: r.failed ? " · " + t("{n} failed", { n: r.failed }) : "" }));
+  if (gs.ok) L.push(t("Git: {n} {n|change|changes} not committed · {m} {m|commit|commits} not pushed", { n: gs.changed || 0, m: gs.ahead || 0 }));
+  const waiting = team.filter((m) => m.attention?.kind === "permission"), working = team.filter(isBusy);
+  if (working.length) L.push(t("Working now: {who}", { who: working.map((m) => roleLabel(m)).join(", ") }));
+  if (waiting.length) L.push(t("Waiting for permission: {who}", { who: waiting.map((m) => roleLabel(m)).join(", ") }));
+  const text = L.join("\n");
+  const d = $("#dlg-report"); $("#rp-title").textContent = t("Today's report"); $("#rp-body").textContent = text;
+  $("#rp-copy").onclick = (e) => copyWithState(e.currentTarget, text);
+  d.showModal();
+}
+$("#rp-close").onclick = () => $("#dlg-report").close();
+
+// team hand-offs in the room: the lead carries the task to the member's desk, the member brings the result back
+function officeEvent(ev) {
+  if (ev.kind === "delegate" && ev.to) { station.handoff(ev.agentId, ev.to); sfx.play("handoff"); }
+  else if (ev.kind === "result" && ev.from) { station.handoff(ev.from, ev.agentId); sfx.play("handoff"); }
+}
+// what a member "says" in the office: the first sentence of its reply, without markdown
+function firstSentence(md) {
+  const plain = String(md).replace(/```[\s\S]*?```/g, " ").replace(/[#*`>|_\[\]()]/g, " ").replace(/\s+/g, " ").trim();
+  const m = /^(.{12,140}?[.!?])(\s|$)/.exec(plain);
+  return (m ? m[1] : plain.slice(0, 120)).trim();
+}
+// office sounds: off by default, remembered
+{
+  const b = $("#btn-sfx");
+  const paint = () => { const on = sfx.on; b.setAttribute("aria-pressed", String(on)); b.classList.toggle("on", on); b.title = on ? t("Office sounds (on)") : t("Office sounds (off)"); };
+  sfx.init(); paint();
+  b.onclick = () => { sfx.set(!sfx.on); paint(); if (sfx.on) sfx.play("done"); };
+}
+// test runs light the beacon on the room's server rack: amber while running, red on failure, green (and confetti) on success
+const TEST_CMD = /(^|[\s;&|(])(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\b(npx\s+)?(jest|vitest|mocha|playwright\s+test|cypress\s+run)\b|\bpytest\b|\bpython3?\s+-m\s+(pytest|unittest)\b|\bdotnet\s+test\b|\b(nx|ng)\s+(run-many\s+.*-t\s+)?test\b|\bgo\s+test\b|\bcargo\s+test\b|\bphpunit\b|\bphp\s+artisan\s+test\b|\bmvn\s+(\S+\s+)*test\b|\bgradlew?\s+(\S+\s+)*test\b|\brspec\b|\bnode\s+--test\b/i;
+const testRuns = new Map(); // toolUseId → team
+function testWatch(ev) {
+  if (ev.type === "tool_use") {
+    if (ev.name !== "Bash" || !TEST_CMD.test(String(ev.input?.command || ""))) return;
+    const a = agents.find((x) => x.id === ev.agentId); if (!a) return;
+    testRuns.set(ev.toolUseId, teamKey(a)); station.setTest(teamKey(a), "running");
+  } else if (testRuns.has(ev.toolUseId)) {
+    const tk = testRuns.get(ev.toolUseId); testRuns.delete(ev.toolUseId);
+    if ([...testRuns.values()].includes(tk)) return; // another test run in the same room is still going
+    station.setTest(tk, ev.isError ? "fail" : "pass"); sfx.play(ev.isError ? "testFail" : "testPass");
+    if (ev.isError) testFailed.add(tk); else testFailed.delete(tk); catSoon();
+  }
+}
+
+// the monitors on the desks show what each member is really doing: the code being written, the command and its output
+const termOf = new Map(); // agentId → what its terminal screen shows
+const fileName = (p) => String(p || "").split(/[\\/]/).pop();
+function screenWatch(ev) {
+  const id = ev.agentId; if (!id) return;
+  if (ev.type === "tool_use") {
+    const i = ev.input || {};
+    if (ev.name === "Edit" || ev.name === "MultiEdit" || ev.name === "Write") {
+      const src = ev.name === "Write" ? i.content : ev.name === "Edit" ? i.new_string : i.edits?.[0]?.new_string;
+      station.setScreen(id, { kind: "code", title: fileName(i.file_path), lines: String(src || "").split("\n").filter((l) => l.trim()).slice(0, 8) });
+    } else if (ev.name === "Read") station.setScreen(id, { kind: "code", title: fileName(i.file_path), lines: [] });
+    else if (ev.name === "Bash") { const d = { kind: "term", title: i.description || "terminal", cmd: i.command, lines: [], use: ev.toolUseId }; termOf.set(id, d); station.setScreen(id, d); }
+    else if (ev.name === "Grep" || ev.name === "Glob") station.setScreen(id, { kind: "term", title: ev.name.toLowerCase(), cmd: `${ev.name.toLowerCase()} ${i.pattern || ""}`, lines: [] });
+  } else {
+    const d = termOf.get(id); if (!d || d.use !== ev.toolUseId) return;
+    const out = String(typeof ev.content === "string" ? ev.content : "").split("\n").map((l) => l.trimEnd()).filter(Boolean);
+    station.setScreen(id, { ...d, lines: out.slice(-6), ok: !ev.isError }); termOf.delete(id);
+  }
+}
+
+// the office follows the clock: day, sunset, night (lamps on, the screens of whoever is working glow)
+function applyDaylight() {
+  const q = new URLSearchParams(location.search).get("hour"); // ?hour=21 to preview the night
+  const now = new Date(), h = q != null ? Number(q) : now.getHours() + now.getMinutes() / 60;
+  const { k, dusk } = station.daylight(h);
+  document.body.classList.toggle("tod-night", k < 0.3); document.body.classList.toggle("tod-dusk", dusk > 0.35 && k >= 0.3);
+}
+applyDaylight(); setInterval(applyDaylight, 60000);
+
+// ================= broadcast =================
+// One button and the station becomes a live feed for a second screen: the camera goes by itself to whatever
+// happens (a hand-off, a test run, a permission request, a finished run), a lower third says what it is, and in
+// calm moments it glides from one busy room to the next. Record saves a short clip of it.
+let live = null;
+const LIVE_HOLD = 6500, LIVE_DRIFT = 9000;
+function liveCaption(ev) {
+  // what the lower third says for an event; null = not worth a cut
+  const a = agents.find((x) => x.id === ev.agentId); if (!a) return null;
+  const who = roleLabel(a), room = leadOfTeam(teamKey(a))?.name || a.name;
+  if (ev.type === "team" && ev.kind === "delegate") { const to = agents.find((x) => x.id === ev.to); return { room, line: t("{who} hands a task to {to}", { who, to: to ? roleLabel(to) : "" }), id: a.id, pri: 3 }; }
+  if (ev.type === "team" && ev.kind === "result") { const from = agents.find((x) => x.id === ev.from); return { room, line: t("{who} brings the result back", { who: from ? roleLabel(from) : "" }), id: ev.from || a.id, pri: 3 }; }
+  if (ev.type === "tool_use" && ev.name === "Bash" && TEST_CMD.test(String(ev.input?.command || ""))) return { room, line: t("{who} runs the tests", { who }), id: a.id, pri: 4 };
+  if (ev.type === "tool_use" && (ev.name === "Edit" || ev.name === "Write" || ev.name === "MultiEdit")) return { room, line: t("{who} writes {file}", { who, file: fileName(ev.input?.file_path) }), id: a.id, pri: 1 };
+  if (ev.type === "result") return { room, line: ev.isError ? t("{who} stopped with an error", { who }) : t("{who} is done", { who }), id: a.id, pri: ev.isError ? 5 : 3 };
+  if (ev.type === "status" && ev.status === "thinking" && ev.text) return { room, line: t("{who} starts: {text}", { who, text: String(ev.text).slice(0, 60) }), id: a.id, pri: 2 };
+  return null;
+}
+function liveEvent(ev) {
+  if (!live) return;
+  const c = liveCaption(ev); if (!c) return;
+  const now = performance.now();
+  if (c.pri < live.pri && now < live.until) return; // something more important is on screen
+  liveCut(c, now);
+}
+function liveCut(c, now = performance.now()) {
+  live.pri = c.pri; live.until = now + LIVE_HOLD; live.lastCut = now;
+  station.glide(c.id, 9.5, 0.3, 0);
+  liveThird(c.room, c.line);
+}
+function liveThird(room, line) {
+  const box = $("#live"), third = box.querySelector(".lv-third");
+  box.querySelector(".lv-room").textContent = room; box.querySelector(".lv-line").textContent = line;
+  third.classList.remove("in"); void third.offsetWidth; third.classList.add("in");
+}
+function liveTick() {
+  if (!live) return;
+  const now = performance.now();
+  $("#live .lv-clock").textContent = new Date().toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+  if (now >= live.until && now - live.lastCut > LIVE_DRIFT) {
+    // calm: glide to the next room where someone works (or just the next room), with a slow drift
+    const rooms = station.roomsWithWork(); if (!rooms.length) return;
+    const busy = rooms.filter((r) => r.working), pool = busy.length ? busy : rooms;
+    live.i = (live.i + 1) % pool.length; const r = pool[live.i], lead = leadOfTeam(r.teamId);
+    const team = agents.filter((x) => teamKey(x) === r.teamId), working = team.filter(isBusy);
+    live.drift = -live.drift;
+    station.glide(r.teamId, 12.5, 0.18, live.drift * 1.5);
+    const line = working.length ? t("{who} at work", { who: working.map(roleLabel).join(", ") }) : t("Quiet for now");
+    liveThird(lead?.name || r.teamId, line);
+    live.lastCut = now; live.pri = 0;
+  }
+}
+function startLive(auto = false) {
+  if (live) return;
+  live = { pri: 0, until: 0, lastCut: -1e9, i: -1, drift: 1, timer: setInterval(liveTick, 500), rec: null, auto };
+  document.body.classList.add("live"); $("#live").hidden = false; closePanel(); station.fit();
+  liveTick();
+}
+function stopLive() {
+  if (!live) return; clearInterval(live.timer); if (live.rec) stopClip(); live = null;
+  document.body.classList.remove("live"); $("#live").hidden = true; station.fit();
+}
+// a clip of the broadcast: the 3D canvas recorded for 20 s (or until pressed again), saved as .webm
+function startClip() {
+  if (!live || live.rec) return;
+  let stream; try { stream = station.stream(30); } catch { toast(t("Recording is not available in this browser"), "bad"); return; }
+  const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find((m) => window.MediaRecorder?.isTypeSupported(m));
+  if (!mime) { toast(t("Recording is not available in this browser"), "bad"); return; }
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 }), chunks = [];
+  rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    const blob = new Blob(chunks, { type: "video/webm" }), url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = `ecelon-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.webm`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast(t("Clip saved ({s} s)", { s: Math.round((performance.now() - live?.recAt || 0) / 1000) }));
+  };
+  rec.start(500); live.rec = rec; live.recAt = performance.now();
+  $("#live").classList.add("recording"); live.recTimer = setTimeout(stopClip, 20000);
+}
+function stopClip() { if (!live?.rec) return; clearTimeout(live.recTimer); try { live.rec.stop(); } catch {} live.rec = null; $("#live").classList.remove("recording"); }
+{
+  $("#live-btn").onclick = () => (live ? stopLive() : startLive());
+  const box = $("#live");
+  box.querySelector(".lv-x").onclick = stopLive;
+  box.querySelector(".lv-rec").onclick = () => (live?.rec ? stopClip() : startClip());
+  box.querySelector(".lv-snap").onclick = () => { try { const a = document.createElement("a"); a.href = station.snapshot(); a.download = `ecelon-${Date.now()}.png`; a.click(); toast(t("Picture saved")); } catch { toast(t("Could not save the picture"), "bad"); } };
+  document.addEventListener("keydown", (e) => { if (live && e.key === "Escape" && !document.querySelector("dialog[open]")) { e.preventDefault(); stopLive(); } });
+  // screensaver: left alone for a few minutes, the station goes on air by itself and comes back at the first touch
+  const IDLE_MS = (Number(new URLSearchParams(location.search).get("idle")) || 240) * 1000; let idleT = 0, idleAt = performance.now(); // ?idle=10 to try it
+  const canAuto = () => !live && !selectedId && !replay && !standup && !document.querySelector("dialog[open]") && !document.body.classList.contains("focus") && document.visibilityState === "visible";
+  const armIdle = () => { clearTimeout(idleT); idleT = setTimeout(() => { if (canAuto()) startLive(true); else armIdle(); }, IDLE_MS); };
+  const touched = () => { const now = performance.now(); if (live?.auto && now - idleAt > 1200) stopLive(); idleAt = now; armIdle(); };
+  for (const ev of ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"]) window.addEventListener(ev, touched, { passive: true, capture: true });
+  armIdle();
+}
+
+// the payslip: per member this week, and the cost spread over the requirement items the runs touched
+async function openPayroll(tk) {
+  const lead = leadOfTeam(tk); let p; try { p = await api(`/api/payroll/${encodeURIComponent(tk)}?since=${weekStart()}`); payroll.set(tk, p); pushOffice(); } catch (e) { toast(e.message, "bad"); return; }
+  const d = $("#dlg-payroll"); $("#py-title").textContent = `${lead?.name || tk} · ${t("Payroll")}`;
+  $("#py-sub").textContent = t("Since Monday · {total} in total · {n} {n|run|runs}", { total: money(p.totalUsd), n: p.members.reduce((s, m) => s + m.runs, 0) });
+  const mem = $("#py-members"); mem.innerHTML = "";
+  for (const m of p.members.sort((a, b) => b.costUsd - a.costUsd)) {
+    const row = document.createElement("div"); row.className = "py-row";
+    row.innerHTML = `<i style="background:${ROLE_COLOR[m.role] || "#888"}"></i><b></b><span></span><em></em>`;
+    row.querySelector("b").textContent = meta.roles?.[m.role]?.label || m.name;
+    row.querySelector("span").textContent = m.runs ? t("{n} {n|run|runs} · {h} h · {k} turns", { n: m.runs, h: (m.durationMs / 3600000).toFixed(1), k: m.turns }) : t("no runs this week");
+    row.querySelector("em").textContent = money(m.costUsd); mem.append(row);
+  }
+  const tb = $("#py-items tbody"); tb.innerHTML = "";
+  for (const it of p.items.slice(0, 40)) {
+    const tr = document.createElement("tr");
+    const who = Object.entries(it.members).sort((a, b) => b[1] - a[1]).map(([r, v]) => `${meta.roles?.[r]?.label || r} ${money(v)}`).join(" · ");
+    tr.innerHTML = `<td><code></code></td><td class="py-t"></td><td class="py-w"></td><td class="py-n"></td><td class="py-m"></td>`;
+    tr.querySelector("code").textContent = it.code; tr.querySelector(".py-t").textContent = it.title || ""; tr.querySelector(".py-w").textContent = who;
+    tr.querySelector(".py-n").textContent = it.runs; tr.querySelector(".py-m").textContent = money(it.costUsd);
+    if (it.verified === "verified") tr.classList.add("ok"); else if (it.verified === "failed") tr.classList.add("bad");
+    tb.append(tr);
+  }
+  $("#py-items").hidden = !p.items.length; $("#py-noitems").hidden = !!p.items.length;
+  d.showModal();
+}
+$("#py-close").onclick = () => $("#dlg-payroll").close();
+
+// the TV replays the day of a room: every run, hand-off, file written and test result, compressed into ~40 seconds
+let replay = null;
+const TEST_RE = () => TEST_CMD;
+async function playReplay(tk) {
+  if (replay) stopReplay();
+  const evs = await api(`/api/replay/${encodeURIComponent(tk)}?since=${dayStart()}`).catch(() => []);
+  const name = leadOfTeam(tk)?.name || tk;
+  if (!evs.length) { toast(t("Nothing happened in {name} today yet", { name })); return; }
+  // compressed time: long silences shrink to a beat, bursts keep their rhythm
+  let at = 0, prev = evs[0].t;
+  const sched = evs.map((e) => { at += Math.min((e.t - prev) / 1000 / 25, 1.1) + 0.035; prev = e.t; return { at, e }; });
+  const scale = at > 45 ? 45 / at : 1; for (const x of sched) x.at *= scale;
+  const box = $("#replay"); box.hidden = false; box.querySelector(".rp-room").textContent = name;
+  // marks on the track: red where something failed, green where a run finished fine
+  const dur = sched[sched.length - 1].at + 1.5;
+  box.querySelector(".rp-marks").innerHTML = sched.filter((x) => x.e.k === "end" || (x.e.k === "res" && x.e.err)).slice(0, 200)
+    .map((x) => `<i class="${x.e.err ? "bad" : "ok"}" style="left:${(x.at / dur) * 100}%"></i>`).join("");
+  replay = { tk, sched, i: 0, dur, t: 0, last: performance.now(), paused: false, speed: 1, terms: new Map(), tests: new Set(), raf: 0 };
+  const team = agents.filter((a) => teamKey(a) === tk);
+  for (const m of team) { station.setStatus(m.id, "idle"); station.setActivity(m.id, ""); }
+  station.setTV(tk, true); station.tour(tk, 10);
+  box.classList.remove("paused");
+  const loop = (now) => {
+    const r = replay; if (!r) return;
+    if (!r.paused) r.t += ((now - r.last) / 1000) * r.speed; r.last = now;
+    while (r.i < r.sched.length && r.sched[r.i].at <= r.t) applyReplay(r, r.sched[r.i++].e);
+    box.querySelector(".rp-track > i").style.width = Math.min(100, (r.t / r.dur) * 100) + "%";
+    const cur = r.sched[Math.max(0, r.i - 1)].e.t; box.querySelector(".rp-clock").textContent = new Date(cur).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+    if (r.t >= r.dur) { stopReplay(); return; }
+    r.raf = requestAnimationFrame(loop);
+  };
+  replay.raf = requestAnimationFrame(loop);
+}
+function applyReplay(r, e) {
+  const id = e.a;
+  switch (e.k) {
+    case "user": station.setStatus(id, "thinking"); station.setActivity(id, t("thinking…")); break;
+    case "tool": {
+      station.setStatus(id, "tool"); station.setActivity(id, toolPhrase(e.name, e.file || e.cmd || ""));
+      if (e.name === "Edit" || e.name === "Write" || e.name === "MultiEdit") station.setScreen(id, { kind: "code", title: fileName(e.file), lines: String(e.code || "").split("\n").filter((l) => l.trim()).slice(0, 8) });
+      else if (e.name === "Read") station.setScreen(id, { kind: "code", title: fileName(e.file), lines: [] });
+      else if (e.name === "Bash") {
+        const d = { kind: "term", title: e.desc || "terminal", cmd: e.cmd, lines: [] }; r.terms.set(e.id, { id, d }); station.setScreen(id, d);
+        if (TEST_RE().test(String(e.cmd || ""))) { r.tests.add(e.id); station.setTest(r.tk, "running"); }
+      }
+      break;
+    }
+    case "res": {
+      station.setStatus(id, "thinking");
+      const tm = r.terms.get(e.id); if (tm) { station.setScreen(tm.id, { ...tm.d, lines: String(e.out || "").split("\n").map((l) => l.trimEnd()).filter(Boolean).slice(-6), ok: !e.err }); r.terms.delete(e.id); }
+      if (r.tests.has(e.id)) { r.tests.delete(e.id); station.setTest(r.tk, e.err ? "fail" : "pass"); }
+      break;
+    }
+    case "end": station.setStatus(id, e.err ? "error" : "done"); station.setActivity(id, ""); break;
+    case "delegate": if (e.to) station.handoff(id, e.to); break;
+    case "result": if (e.from) station.handoff(e.from, id); break;
+  }
+}
+function stopReplay() {
+  const r = replay; if (!r) return; replay = null; cancelAnimationFrame(r.raf);
+  $("#replay").hidden = true; station.setTV(r.tk, false); station.setTest(r.tk, "idle");
+  for (const m of agents.filter((a) => teamKey(a) === r.tk)) { station.setStatus(m.id, m.status || "idle"); station.setActivity(m.id, ""); }
+}
+{
+  const box = $("#replay");
+  box.querySelector(".rp-x").onclick = stopReplay;
+  box.querySelector(".rp-play").onclick = () => { if (!replay) return; replay.paused = !replay.paused; box.classList.toggle("paused", replay.paused); };
+  box.querySelector(".rp-speed").onclick = (e) => { if (!replay) return; replay.speed = replay.speed === 1 ? 2 : replay.speed === 2 ? 4 : 1; e.currentTarget.textContent = replay.speed + "×"; };
+  document.addEventListener("keydown", (e) => { if (replay && e.key === "Escape" && !document.querySelector("dialog[open]")) { e.preventDefault(); stopReplay(); } });
+}
+
+// morning stand-up: the first time the station opens in a day, the camera tours the rooms; each team gathers at its
+// meeting table and the card says what got done yesterday, what is open today and what blocks it
+const STANDUP_KEY = "standupDay";
+const sameDay = () => new Date().toDateString();
+let standup = null;
+async function startStandup(auto = false) {
+  if (standup || !agents.length) return;
+  const since = dayStart() - DAY;
+  const ov = await api(`/api/overview?since=${since}&old=${Date.now() - 3 * DAY}`).catch(() => overview);
+  const rooms = teamOrder().map((tk) => {
+    const o = ov[tk] || {}, tasks = o.tasks || {}, r = o.reqs, gs = gitSum[tk] || {}, team = agents.filter((x) => teamKey(x) === tk);
+    const y = [], td = [], b = [];
+    if (tasks.doneSince) y.push(t("{n} {n|task|tasks} done", { n: tasks.doneSince }));
+    if (r?.total) y.push(t("Scope: {done}/{total} verified", { done: r.done, total: r.total }));
+    if (gs.ahead) y.push(t("{n} {n|commit|commits} waiting to be pushed", { n: gs.ahead }));
+    const open = (tasks.todo || 0) + (tasks.doing || 0) + (tasks.blocked || 0);
+    if (open) td.push(t("{n} open {n|task|tasks}", { n: open }) + (tasks.doing ? ` · ${t("{n} in progress", { n: tasks.doing })}` : ""));
+    if (tasks.toUser) td.push(t("{n} waiting for you", { n: tasks.toUser }));
+    if (gs.changed) td.push(t("{n} {n|change|changes} not committed", { n: gs.changed }));
+    for (const m of team) if (m.attention?.kind === "permission") b.push(t("{role} waits for permission", { role: roleLabel(m) }));
+    if (tasks.blocked) b.push(t("{n} blocked {n|task|tasks}", { n: tasks.blocked }));
+    if (r?.failed) b.push(t("{n} failed {n|verification|verifications}", { n: r.failed }));
+    if (tasks.old) b.push(t("{n} {n|task|tasks} untouched for 3+ days", { n: tasks.old }));
+    return { tk, name: leadOfTeam(tk)?.name || tk, y, td, b, weight: y.length + td.length + b.length };
+  }).filter((x) => x.weight).slice(0, 8);
+  if (!rooms.length) { if (!auto) toast(t("Nothing to report yet: no tasks, scope or changes in any room")); return; }
+  try { localStorage.setItem(STANDUP_KEY, sameDay()); } catch {}
+  const box = $("#standup"); let i = -1, timer = 0;
+  const dots = box.querySelector(".su-dots"); dots.innerHTML = rooms.map(() => "<i></i>").join("");
+  const fill = (sel, list) => { const ul = box.querySelector(sel + " ul"); ul.innerHTML = ""; for (const x of list.length ? list : ["–"]) { const li = document.createElement("li"); li.textContent = x; ul.append(li); } };
+  const STEP = 5200;
+  const show = () => {
+    if (i >= 0) station.gather(rooms[i].tk, false);
+    i++; if (i >= rooms.length) return end();
+    const r = rooms[i];
+    station.gather(r.tk, true); station.tour(r.tk, 11);
+    box.querySelector(".su-room").textContent = r.name;
+    fill(".su-y", r.y); fill(".su-t", r.td); fill(".su-b", r.b);
+    box.querySelector(".su-b").classList.toggle("has", r.b.length > 0);
+    dots.querySelectorAll("i").forEach((d, k) => d.classList.toggle("on", k <= i));
+    const bar = box.querySelector(".su-bar i"); bar.style.transition = "none"; bar.style.width = "0"; void bar.offsetWidth; bar.style.transition = `width ${STEP}ms linear`; bar.style.width = "100%";
+    timer = setTimeout(show, STEP);
+  };
+  const end = () => {
+    clearTimeout(timer); if (i >= 0 && i < rooms.length) station.gather(rooms[i].tk, false);
+    box.hidden = true; standup = null; station.fit(); document.removeEventListener("keydown", onKey, true);
+  };
+  const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); end(); } else if (e.key === "ArrowRight") { clearTimeout(timer); show(); } };
+  document.addEventListener("keydown", onKey, true);
+  box.querySelector(".su-skip").onclick = end;
+  standup = { end }; box.hidden = false; show();
+}
+$("#standup-btn").onclick = () => (standup ? standup.end() : startStandup(false));
+// once a day, after 06:00, a few seconds after opening (when the data is in)
+setTimeout(() => { let last = ""; try { last = localStorage.getItem(STANDUP_KEY) || ""; } catch {} if (last !== sameDay() && new Date().getHours() >= 6 && !selectedId && !document.body.classList.contains("focus")) startStandup(true); }, 6000);
+
+// approval queue: everyone waiting for permission, across all projects, grant from here
+function renderInbox() {
+  const box = $("#inbox"); if (!box) return;
+  const waiting = agents.filter((a) => a.attention?.kind === "permission" && !isBusy(a));
+  box.hidden = !waiting.length; if (!waiting.length) { box.innerHTML = ""; return; }
+  const key = waiting.map((a) => a.id + a.attention.at).join("|"); if (box.dataset.key === key) return; box.dataset.key = key;
+  let collapsed = false; try { collapsed = localStorage.getItem("inboxCollapsed") === "1"; } catch {}
+  box.classList.toggle("collapsed", collapsed);
+  box.innerHTML = `<button type="button" class="ib-head" aria-expanded="${!collapsed}"><span class="ib-dot"></span>${t("Waiting for your approval ({n})", { n: waiting.length })}<svg class="ib-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>`;
+  box.querySelector(".ib-head").onclick = (e) => {
+    const c = !box.classList.contains("collapsed"); box.classList.toggle("collapsed", c); e.currentTarget.setAttribute("aria-expanded", String(!c));
+    try { localStorage.setItem("inboxCollapsed", c ? "1" : "0"); } catch {}
+  };
+  const SHOW = 2;
+  for (const a of waiting.slice(0, SHOW)) {
+    const lead = leadOfTeam(teamKey(a)), att = a.attention, specs = att.specs || [];
+    const c = document.createElement("div"); c.className = "ib-card";
+    c.innerHTML = `<div class="ib-who"><b></b><span></span></div><ul class="ib-items"></ul><div class="ib-act"></div>`;
+    c.querySelector("b").textContent = lead?.name || a.name; c.querySelector(".ib-who span").textContent = teamOf(a).length > 1 ? roleLabel(a) : "";
+    const ul = c.querySelector("ul");
+    for (const it of (att.items || []).slice(0, 3)) { const li = document.createElement("li"); li.innerHTML = "<b></b> <code></code>"; li.querySelector("b").textContent = it.tool; li.querySelector("code").textContent = it.what; ul.append(li); }
+    if (!att.items?.length) { const li = document.createElement("li"); li.textContent = att.text; ul.append(li); }
+    const act = c.querySelector(".ib-act");
+    const b = (label, cls, fn) => { const x = document.createElement("button"); x.type = "button"; x.className = "btn sm " + cls; x.textContent = label; x.onclick = async () => { act.querySelectorAll("button").forEach((y) => (y.disabled = true)); await fn(); }; act.append(x); };
+    if (specs.length) {
+      b(t("Allow once and continue"), "primary", async () => { await sendPrompt({ text: t("Permission granted, continue where you left off."), allowOnce: specs }, a); });
+      b(t("Always allow"), "ghost", async () => { try { await api(`/api/agents/${a.id}`, { method: "PATCH", body: { allowedTools: [...new Set([...(a.allowedTools || []), ...specs])] } }); } catch (err) { toast(err.message, "bad"); return; } await sendPrompt({ text: t("Permission granted, continue where you left off.") }, a); });
+    }
+    b(t("Open"), "ghost", async () => { await selectAgent(a.id); station.focus(a.id); act.querySelectorAll("button").forEach((y) => (y.disabled = false)); });
+    box.append(c);
+  }
+  if (waiting.length > SHOW) { const m = document.createElement("div"); m.className = "ib-more"; m.textContent = t("+{n} more", { n: waiting.length - SHOW }); box.append(m); }
+}
+
 // ================= sibling (linked) projects =================
 $("#btn-links").onclick = () => {
   closePops(); const a = current(); if (!a) return;
@@ -356,6 +845,7 @@ async function refresh() {
   agents = list;
   if (firstRefresh) { firstRefresh = false; for (const id of queue.keys()) if (!agents.some((x) => x.id === id)) queue.delete(id); saveQueue(); setTimeout(() => { for (const id of queue.keys()) flushQueue(id); }, 1500); }
   station.setAgents(agents);
+  pushOffice();
   for (const id of queue.keys()) flushQueue(id); // the server tells us (agents_changed) when a slot is free: send what is waiting
   station.select(selectedId);
   $("#empty-hint").hidden = agents.length > 0;
@@ -515,6 +1005,7 @@ let loadSeq = 0;
 let chatOf = null;
 let loadingChat = null; // live events arriving during load wait here; appended in order once the history is drawn
 const CHAT_TAIL = 500; // in a very long conversation only the last events are drawn at first (more via "show earlier")
+const CHAT_LIVE_MAX = 500; // messages drawn live before the chat is cut back to its tail
 const CHAT_BUDGET = 60000; // ...and by weight: long replies (tables, code) are what makes drawing slow, not the event count
 function tailByWeight(log, pages) {
   let w = 0, i = log.length; const cap = CHAT_BUDGET * (1 + pages * 2), max = CHAT_TAIL * (1 + pages * 2);
@@ -720,12 +1211,14 @@ function renderAttachments() {
     box.append(d);
   });
 }
-async function addFiles(files) {
+async function addFiles(files, { linkTo } = {}) {
   // non-images (PDF, Word, Excel…) are uploaded to the document library and attached as references
   const docsIn = files.filter((f) => !/^image\/(png|jpeg|gif|webp)$/.test(f.type));
   if (docsIn.length) {
     const up = await lib.upload(docsIn, { collection: "" });
     for (const d of up) addDoc(d.id);
+    // dropped onto a room: the document also belongs to that project from now on (the agents know it in every conversation)
+    if (linkTo) { for (const d of up) await api(`/api/library/${d.id}`, { method: "PATCH", body: { agents: [...new Set([...(d.agents || []), linkTo])] } }).catch(() => {}); if (up.length) { await lib.load().catch(() => {}); renderLinked(); } }
     if (up.length) toast(up.length === 1 ? t("{name} added to the library and attached to the message", { name: up[0].name }) : t("{n} {n|document|documents} added to the library and attached to the message", { n: up.length }));
   }
   for (const f of files.filter((x) => !docsIn.includes(x))) {
@@ -735,6 +1228,27 @@ async function addFiles(files) {
     pending.push({ name: f.name || "yapistirilan.png", dataUrl });
   }
   renderAttachments(); $("#prompt").focus();
+}
+// drop files onto the office: onto a character → attached to a message for that member; onto a room → for its lead,
+// and documents are linked to that project
+{
+  const cv = $("#scene"), tip = $("#tooltip");
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+  const target = (e) => { const id = station.pickAt(e.clientX, e.clientY); return id ? agents.find((x) => x.id === id) : null; };
+  cv.addEventListener("dragover", (e) => {
+    if (!hasFiles(e)) return; e.preventDefault();
+    const a = target(e), r = $("#stage").getBoundingClientRect();
+    tip.hidden = false; tip.style.left = e.clientX - r.left + "px"; tip.style.top = e.clientY - r.top + "px";
+    tip.textContent = a ? t("Drop for {who}", { who: agentLabel(a) }) : t("Drop onto a room");
+  });
+  cv.addEventListener("dragleave", () => { tip.hidden = true; });
+  cv.addEventListener("drop", async (e) => {
+    if (!hasFiles(e)) return; e.preventDefault(); tip.hidden = true;
+    const a = target(e), files = [...(e.dataTransfer?.files || [])]; if (!a || !files.length) return;
+    if (selectedId !== a.id) await selectAgent(a.id);
+    station.focus(a.id);
+    await addFiles(files, { linkTo: leadOf(a).id });
+  });
 }
 $("#btn-attach").onclick = toggle((btn) => openPicker(btn, {
   main: [["file", t("File from computer"), t("Images are added to the chat; documents like PDF, Word, Excel are also saved to the library")],
@@ -1159,7 +1673,8 @@ chatEl().addEventListener("click", (e) => {
   if (a) { e.preventDefault(); openInFolder(a.dataset.open); }
 });
 // jump-to-bottom button
-function updateJump() { $("#jump").hidden = nearBottom(); updateSticky(); }
+let jumpRaf = 0; // reads layout: once per frame at most, never once per event
+function updateJump() { if (!jumpRaf) jumpRaf = requestAnimationFrame(() => { jumpRaf = 0; $("#jump").hidden = nearBottom(); updateSticky(); }); }
 // like the Claude Code editor: the last prompt you wrote stays pinned at the top once it has scrolled out of view
 function updateSticky() {
   const bar = $("#sticky-prompt"), chat = chatEl(), top = chat.getBoundingClientRect().top;
@@ -1213,35 +1728,128 @@ function renderBell() {
 }
 // ---- notification centre: recent events when the bell is clicked; desktop notifications are toggled from this panel
 const notifs = lsGet("ecelon.notifs", []);
-const saveNotifs = () => lsSet("ecelon.notifs", notifs.slice(0, 40));
+const NOTIF_KEEP = 200;
+const saveNotifs = () => lsSet("ecelon.notifs", notifs.slice(0, NOTIF_KEEP));
 function renderBellBadge() {
   const n = notifs.filter((x) => !x.read).length; let b = $("#btn-notify .nb");
   if (!b) { b = document.createElement("span"); b.className = "nb"; $("#btn-notify").append(b); }
   b.textContent = n > 9 ? "9+" : n || ""; b.hidden = !n;
 }
-let bellPop = null;
-function closeBell() { bellPop?.remove(); bellPop = null; }
+let bellPop = null, bellFilter = { kind: "all", room: "" };
+function closeBell() {
+  if (!bellPop) return; bellPop.remove(); bellPop = null;
+  for (const x of notifs) x.read = true; saveNotifs(); renderBellBadge(); // what you saw is read once the panel closes
+}
 document.addEventListener("pointerdown", (e) => { if (bellPop && !bellPop.contains(e.target) && !e.target.closest("#btn-notify")) closeBell(); }, true);
+document.addEventListener("keydown", (e) => { if (bellPop && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeBell(); } }, true);
+const dayKey = (at) => { const d = new Date(at); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+function dayLabel(at) {
+  const d = new Date(at), today = new Date(), y = new Date(Date.now() - DAY);
+  if (dayKey(at) === dayKey(today)) return t("Today"); if (dayKey(at) === dayKey(y)) return t("Yesterday");
+  return d.toLocaleDateString(locale(), { day: "numeric", month: "long", weekday: "short" });
+}
+const hhmm = (at) => new Date(at).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+function notifTime(at) { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? t("now") : m < 60 ? t("{n} min", { n: m }) : hhmm(at); }
+function notifMeta(x) {
+  const bits = [];
+  if (x.turns) bits.push(t("{n} {n|step|steps}", { n: x.turns }));
+  if (x.durationMs) bits.push(x.durationMs >= 90000 ? t("{n} min", { n: Math.round(x.durationMs / 60000) }) : t("{n} s", { n: Math.round(x.durationMs / 1000) }));
+  if (x.costUsd) bits.push(money(x.costUsd));
+  return bits.join(" · ");
+}
+// rows for the list: the same member asking for the same permission again and again becomes one row with a count
+function notifRows(list) {
+  const rows = [];
+  for (const x of list) {
+    const p = rows[rows.length - 1];
+    if (p && x.kind === "permission" && p.x.kind === "permission" && p.x.agentId === x.agentId && dayKey(p.x.at) === dayKey(x.at)) { p.n++; p.all.push(x); continue; }
+    rows.push({ x, n: 1, all: [x] });
+  }
+  return rows;
+}
 function openBell() {
   if (bellPop) return closeBell();
-  const m = document.createElement("div"); m.className = "pop lib-menu bell-pop";
-  const on = notifyOn && "Notification" in window && Notification.permission === "granted";
-  const ICON = { done: "✓", permission: "⚠", error: "✕" };
-  m.innerHTML = `<p class="lm-title">${t("Notifications")}</p><div class="bn-list">` + (notifs.length ? notifs.slice(0, 30).map((x, i) => `<button type="button" class="bn-item k-${x.kind}${x.read ? "" : " unread"}" data-i="${i}"><i>${ICON[x.kind] || "•"}</i><span><b>${escHtml(x.title)}</b><small>${escHtml(x.body || "")}</small></span><em>${new Date(x.at).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}</em></button>`).join("")
-    : `<p class="bn-empty">${t("No notifications yet. They appear here when a team finishes its work, asks for permission or hits an error.")}</p>`) +
-    `</div><div class="bn-foot"><button type="button" data-bn="desk">${on ? t("Turn desktop notifications off") : t("Turn desktop notifications on")}</button>${notifs.length ? `<button type="button" data-bn="clear">${t("Clear")}</button>` : ""}</div>`;
+  const m = document.createElement("div"); m.className = "bell2"; m.setAttribute("role", "dialog"); m.setAttribute("aria-label", t("Notifications"));
   document.body.append(m); bellPop = m;
   const r = $("#btn-notify").getBoundingClientRect();
-  m.style.left = Math.max(8, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 8)) + "px"; m.style.top = r.bottom + 8 + "px";
-  m.style.maxHeight = Math.max(200, innerHeight - r.bottom - 24) + "px"; // never taller than the space under the bell: the footer buttons stay reachable
-  m.onclick = async (e) => {
-    const it = e.target.closest(".bn-item");
-    if (it) { const x = notifs[+it.dataset.i]; closeBell(); const a = agents.find((q) => q.id === x.agentId); if (a) { selectAgent(a.id); station.focus(a.id); } else toast(t("This project is no longer in the station"), "bad"); return; }
-    const k = e.target.closest("[data-bn]")?.dataset.bn;
-    if (k === "clear") { notifs.length = 0; saveNotifs(); renderBellBadge(); closeBell(); }
-    if (k === "desk") { closeBell(); await toggleDesktop(); }
+  const place = () => { m.style.left = Math.max(8, Math.min(r.left - 40, innerWidth - m.offsetWidth - 8)) + "px"; m.style.top = r.bottom + 10 + "px"; m.style.maxHeight = Math.max(260, innerHeight - r.bottom - 22) + "px"; };
+  const KIND = { done: ["✓", t("Finished")], error: ["✕", t("Errors")], permission: ["!", t("Permission")] };
+  const roomOf = (x) => { if (x.room) return x.room; const a = agents.find((q) => q.id === x.agentId); return a ? leadOf(a).name : x.title.split(" · ")[0]; };
+  const go = (id) => { const a = agents.find((q) => q.id === id); closeBell(); if (a) { selectAgent(a.id); station.focus(a.id); } else toast(t("This project is no longer in the station"), "bad"); };
+  const render = () => {
+    const on = notifyOn && "Notification" in window && Notification.permission === "granted";
+    const today = notifs.filter((x) => dayKey(x.at) === dayKey(Date.now()));
+    const cnt = (k, arr = today) => arr.filter((x) => x.kind === k).length;
+    const waiting = agents.filter((a) => (a.attention?.kind === "permission" || a.attention?.kind === "error") && !isBusy(a));
+    const shown = notifs.filter((x) => (bellFilter.kind === "all" || x.kind === bellFilter.kind) && (!bellFilter.room || roomOf(x) === bellFilter.room));
+    const digest = today.length ? [cnt("done") && t("{n} finished", { n: cnt("done") }), cnt("error") && t("{n} {n|error|errors}", { n: cnt("error") }), cnt("permission") && t("{n} permission {n|request|requests}", { n: cnt("permission") })].filter(Boolean).join(" · ") : t("Nothing yet today");
+    m.innerHTML = `
+      <header class="b2-head">
+        <div class="b2-top"><h3>${t("Notifications")}</h3>${notifs.some((x) => !x.read) ? `<button type="button" class="b2-link" data-b2="readall">${t("Mark all read")}</button>` : ""}</div>
+        <p class="b2-digest"><b>${t("Today")}</b> ${escHtml(digest)}</p>
+        <div class="b2-day" aria-hidden="true"><div class="b2-ticks"></div><i class="b2-now"></i><span style="left:25%">06</span><span style="left:50%">12</span><span style="left:75%">18</span></div>
+      </header>
+      <section class="b2-wait" ${waiting.length ? "" : "hidden"}><h4>${t("Waiting for you ({n})", { n: waiting.length })}</h4><div class="b2-wlist"></div></section>
+      <div class="b2-chips">
+        ${[["all", t("All"), notifs.length], ["done", KIND.done[1], cnt("done", notifs)], ["error", KIND.error[1], cnt("error", notifs)], ["permission", KIND.permission[1], cnt("permission", notifs)]].map(([k, l, n]) => `<button type="button" class="b2-chip${bellFilter.kind === k ? " on" : ""}" data-kind="${k}">${escHtml(l)}<em>${n}</em></button>`).join("")}
+        ${bellFilter.room ? `<button type="button" class="b2-chip on room" data-b2="noroom">${escHtml(bellFilter.room)} ×</button>` : ""}
+      </div>
+      <div class="b2-list" tabindex="-1"></div>
+      <footer class="b2-foot"><label class="b2-switch"><input type="checkbox" ${on ? "checked" : ""} data-b2="desk"><i></i><span>${t("Desktop notifications")}</span></label>${notifs.length ? `<button type="button" class="b2-link" data-b2="clear">${t("Clear")}</button>` : ""}</footer>`;
+    // the day at a glance: one tick per notification of today on a 24 h strip
+    const ticks = m.querySelector(".b2-ticks");
+    for (const x of today) { const d = new Date(x.at), i = document.createElement("i"); i.className = "k-" + x.kind; i.style.left = ((d.getHours() * 60 + d.getMinutes()) / 1440) * 100 + "%"; i.title = `${hhmm(x.at)} · ${x.title}`; i.dataset.at = x.at; ticks.append(i); }
+    { const d = new Date(); m.querySelector(".b2-now").style.left = ((d.getHours() * 60 + d.getMinutes()) / 1440) * 100 + "%"; }
+    // waiting for you: grant or open right here
+    const wl = m.querySelector(".b2-wlist");
+    for (const a of waiting.slice(0, 4)) {
+      const att = a.attention, lead = leadOf(a), c = document.createElement("div"); c.className = "b2-wcard k-" + att.kind;
+      c.innerHTML = `<span class="portrait"></span><div class="b2-wmain"><b></b><code></code></div><div class="b2-wact"></div>`;
+      c.querySelector(".portrait").style.backgroundImage = portraitUrl(a.char ?? 0);
+      c.querySelector("b").textContent = `${lead.name}${teamOf(a).length > 1 ? " · " + roleLabel(a) : ""}`;
+      c.querySelector("code").textContent = att.kind === "permission" ? (att.items?.[0] ? `${att.items[0].tool}: ${att.items[0].what}` : att.text) : att.text;
+      const act = c.querySelector(".b2-wact");
+      if (att.kind === "permission" && att.specs?.length) { const b = document.createElement("button"); b.type = "button"; b.className = "btn sm primary"; b.textContent = t("Allow"); b.title = t("Allow once and continue"); b.onclick = async () => { b.disabled = true; await sendPrompt({ text: t("Permission granted, continue where you left off."), allowOnce: att.specs }, a); c.remove(); }; act.append(b); }
+      const o = document.createElement("button"); o.type = "button"; o.className = "btn sm ghost"; o.textContent = t("Open"); o.onclick = () => go(a.id); act.append(o);
+      wl.append(c);
+    }
+    // the list, grouped by day
+    const list = m.querySelector(".b2-list"); let last = "";
+    if (!shown.length) list.innerHTML = `<p class="b2-empty">${notifs.length ? t("Nothing matches this filter.") : t("No notifications yet. They appear here when a team finishes its work, asks for permission or hits an error.")}</p>`;
+    for (const row of notifRows(shown)) {
+      const x = row.x, dk = dayKey(x.at);
+      if (dk !== last) { last = dk; const h = document.createElement("div"); h.className = "b2-dayh"; h.textContent = dayLabel(x.at); list.append(h); }
+      const a = agents.find((q) => q.id === x.agentId), room = roomOf(x), role = x.title.includes(" · ") ? x.title.split(" · ").slice(1).join(" · ") : "";
+      const el = document.createElement("div"); el.className = `b2-row k-${x.kind}${row.all.some((q) => !q.read) ? " unread" : ""}`; el.dataset.at = x.at; el.tabIndex = 0; el.setAttribute("role", "button");
+      el.innerHTML = `<span class="portrait"><i class="b2-k">${KIND[x.kind]?.[0] || "•"}</i></span>
+        <div class="b2-main"><div class="b2-who"><button type="button" class="b2-room" title="${escHtml(t("Only this project"))}"></button><span class="b2-role"></span>${row.n > 1 ? `<em class="b2-n">×${row.n}</em>` : ""}</div><p></p><small></small></div>
+        <div class="b2-side"><time></time><span class="b2-acts"><button type="button" data-act="read" title="${escHtml(t("Read / unread"))}">●</button><button type="button" data-act="del" title="${escHtml(t("Remove"))}">×</button></span></div>`;
+      if (a) el.querySelector(".portrait").style.backgroundImage = portraitUrl(a.char ?? 0);
+      el.querySelector(".b2-room").textContent = room; el.querySelector(".b2-role").textContent = role;
+      el.querySelector("p").textContent = x.body || ""; el.querySelector("small").textContent = notifMeta(x);
+      const tm = el.querySelector("time"); tm.textContent = notifTime(x.at); tm.title = new Date(x.at).toLocaleString(locale());
+      el.onclick = (e) => {
+        const act = e.target.closest("[data-act]")?.dataset.act;
+        if (e.target.closest(".b2-room")) { bellFilter.room = bellFilter.room === room ? "" : room; render(); return; }
+        if (act === "read") { const v = !row.all.every((q) => q.read); for (const q of row.all) q.read = v; saveNotifs(); renderBellBadge(); render(); return; }
+        if (act === "del") { for (const q of row.all) { const k = notifs.indexOf(q); if (k >= 0) notifs.splice(k, 1); } saveNotifs(); renderBellBadge(); render(); return; }
+        for (const q of row.all) q.read = true; saveNotifs(); go(x.agentId);
+      };
+      el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } else if (e.key === "ArrowDown") { e.preventDefault(); let n = el.nextElementSibling; while (n && !n.classList.contains("b2-row")) n = n.nextElementSibling; n?.focus(); } else if (e.key === "ArrowUp") { e.preventDefault(); let n = el.previousElementSibling; while (n && !n.classList.contains("b2-row")) n = n.previousElementSibling; n?.focus(); } };
+      list.append(el);
+    }
+    place();
   };
-  for (const x of notifs) x.read = true; saveNotifs(); renderBellBadge();
+  m.addEventListener("click", async (e) => {
+    const chip = e.target.closest("[data-kind]"); if (chip) { bellFilter.kind = chip.dataset.kind; render(); return; }
+    const tick = e.target.closest(".b2-ticks i"); if (tick) { const el = m.querySelector(`.b2-row[data-at="${tick.dataset.at}"]`); if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); } return; }
+    const k = e.target.closest("[data-b2]")?.dataset.b2;
+    if (k === "readall") { for (const x of notifs) x.read = true; saveNotifs(); renderBellBadge(); render(); }
+    if (k === "noroom") { bellFilter.room = ""; render(); }
+    if (k === "clear") { notifs.length = 0; saveNotifs(); renderBellBadge(); render(); }
+    if (k === "desk") { e.preventDefault(); closeBell(); await toggleDesktop(); }
+  });
+  render();
 }
 $("#btn-notify").onclick = () => openBell();
 async function toggleDesktop() {
@@ -1267,8 +1875,8 @@ window.addEventListener("focus", () => { unseen = 0; document.title = "Ecelon St
 function handleNotify(ev) {
   const a = agents.find((x) => x.id === ev.agentId); if (!a) return;
   const seen = looking() && current() && teamKey(current()) === teamKey(a); // if you are already looking, count it as read
-  notifs.unshift({ agentId: ev.agentId, kind: ev.kind, title: ev.title, body: (ev.body || "").slice(0, 160), at: Date.now(), read: !!seen });
-  notifs.length = Math.min(notifs.length, 40); saveNotifs(); renderBellBadge();
+  notifs.unshift({ agentId: ev.agentId, kind: ev.kind, title: ev.title, body: (ev.body || "").slice(0, 200), at: Date.now(), read: !!seen, room: ev.room, role: ev.role, durationMs: ev.durationMs, turns: ev.turns, costUsd: ev.costUsd });
+  notifs.length = Math.min(notifs.length, NOTIF_KEEP); saveNotifs(); renderBellBadge();
   const same = current() && teamKey(current()) === teamKey(a);
   const icon = ev.kind === "permission" ? t("Waiting for permission") : ev.kind === "error" ? t("Error") : t("Done");
   if (looking()) {
@@ -1321,9 +1929,15 @@ function connectWS() {
     if (ev.type === "fs") { edUI.onFs(ev); return; }
     if (ev.type === "run-out") { runUI.onEvent(ev); return; }
     if (ev.type === "run") { runUI.onEvent(ev); if (ev.status) { if (ev.status === "running") runCounts[ev.team] = (runCounts[ev.team] || 0); refreshRunCounts(); } return; }
-    if (ev.type === "tasks") { tasksUI.onEvent(ev); if (current() && teamKey(current()) === ev.team) renderTasksBadge(); return; }
-    if (ev.type === "reqs") { reqsUI.onEvent(ev); if (current() && teamKey(current()) === ev.team) renderReqsBadge(); return; }
+    if (ev.type === "tasks") { tasksUI.onEvent(ev); overviewSoon(); if (current() && teamKey(current()) === ev.team) renderTasksBadge(); return; }
+    if (ev.type === "reqs") { reqsUI.onEvent(ev); overviewSoon(); if (current() && teamKey(current()) === ev.team) renderReqsBadge(); return; }
     if (ev.type === "library-tool") { lib.onTool(ev); return; }
+    if (ev.type === "team") officeEvent(ev);
+    liveEvent(ev);
+    if (ev.type === "text" && ev.agentId && ev.text) { station.say(ev.agentId, firstSentence(ev.text)); }
+    if (ev.type === "result" && ev.agentId) sfx.play(ev.isError ? "error" : "done");
+    if (ev.type === "text_delta" && ev.agentId && current() && teamKey(current()) === teamKey(agents.find((x) => x.id === ev.agentId) || {})) sfx.play("key");
+    if (ev.type === "tool_use" || ev.type === "tool_result") { testWatch(ev); screenWatch(ev); }
     if (ev.agentId) {
       lastEventAt.set(ev.agentId, Date.now());
       if (ev.type === "user") { runStart.set(ev.agentId, Date.now()); actText.set(ev.agentId, t("Starting…")); }
@@ -1337,10 +1951,11 @@ function connectWS() {
     }
     if (ev.type === "status") {
       bcEvent(ev);
-      station.setStatus(ev.agentId, ev.status);
-      station.setActivity(ev.agentId, ev.status === "thinking" ? t("thinking…") : ev.status === "tool" ? (lastTool.get(ev.agentId) || ev.tool || t("working")) : "");
+      const live = !replay || replay.tk !== teamKey(agents.find((x) => x.id === ev.agentId) || {});
+      if (live) station.setStatus(ev.agentId, ev.status);
+      if (live) station.setActivity(ev.agentId, ev.status === "thinking" ? t("thinking…") : ev.status === "tool" ? (lastTool.get(ev.agentId) || ev.tool || t("working")) : "");
       const a = agents.find((x) => x.id === ev.agentId);
-      if (a) { a.status = ev.status; renderList(); if (current() && teamKey(a) === teamKey(current())) renderTeamTabs(); }
+      if (a) { a.status = ev.status; renderList(); if (current() && teamKey(a) === teamKey(current())) renderTeamTabs(); station.setAttention(a.id, a.attention?.kind === "permission" && !isBusy(a)); renderInbox(); catSoon(); }
       if (ev.status === "tool") actText.set(ev.agentId, t("Tool running: {tool}", { tool: lastTool.get(ev.agentId) || ev.tool || "" }));
       else if (ev.status === "thinking" && ![t("Writing a reply…"), t("Thinking…"), t("Starting…")].includes(actText.get(ev.agentId))) actText.set(ev.agentId, t("Thinking…"));
       else if (ev.status === "done" || ev.status === "error") {
@@ -1355,6 +1970,8 @@ function connectWS() {
       if (loadingChat?.agentId === ev.agentId) { loadingChat.evs.push(ev); return; }
       if (ev.type === "user") $("#chat .chat-empty")?.remove();
       renderEvent(ev);
+      // a long live session keeps adding to the page; when a run ends and you are at the bottom anyway, redraw just the tail
+      if (ev.type === "result" && chatEl().childElementCount > CHAT_LIVE_MAX && nearBottom()) loadChat();
     }
   };
   ws.onclose = () => {
@@ -1784,7 +2401,7 @@ $("#mode-badge").textContent = meta.mock ? t("Demo mode") : "";
 if (meta.claudeMissing) { const w = $("#cli-warn"); w.textContent = meta.claudeMissing; w.hidden = false; }
 await refresh();
 lib.load().catch(() => {});
-refreshGitSummary();
+refreshGitSummary(); refreshOverview(); refreshPayroll();
 connectWS();
 const q = new URLSearchParams(location.search).get("agent");
 if (q) { const a = agents.find((x) => x.name === q || x.id === q); if (a) selectAgent(a.id); }
