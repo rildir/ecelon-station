@@ -154,7 +154,7 @@ export function slimInput(name, input = {}) {
     case "TodoWrite": return { todos: (input.todos || []).map((t) => ({ content: t.content, status: t.status, activeForm: t.activeForm })) };
     case "ExitPlanMode": return { plan: cut(input.plan, 20000) };
     case "WebFetch": case "WebSearch": return { url: input.url, query: input.query };
-    default: return null;
+    default: return input.code || input.codes ? { code: input.code, codes: input.codes } : null; // requirement tools: which item (cost per item)
   }
 }
 // Allow-list rule: the full command for Bash, the tool name for the others
