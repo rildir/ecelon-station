@@ -1317,7 +1317,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
 
   // ---- animation loop (no object creation per frame)
   const dV = new THREE.Vector3(), goalV = new THREE.Vector3();
-  const clock = new THREE.Clock();
+  const timer = new THREE.Timer();
   function adaptResolution(dt, target) {
     if (performance.now() < resizingUntil || !document.hasFocus()) return; // do not measure while the panel is being dragged / in the background
     // if the frame time clearly exceeds the target 30 times lower the resolution; raise it again after a long calm stretch
@@ -1343,7 +1343,8 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
     const fps = !document.hasFocus() ? 10 : busy ? 60 : 30;
     if (nowT - lastDraw < 1000 / fps - 2) return;
     lastDraw = nowT;
-    const dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
+    timer.update();
+    const dt = Math.min(timer.getDelta(), 0.1), t = timer.getElapsed();
     adaptResolution(dt, 1 / fps);
     if (hoverQueued) {
       const ev = hoverQueued; hoverQueued = null;
@@ -1486,8 +1487,8 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
     select(id) { selectedId = id; updateSelection(); },
     // stop drawing while a full-screen view (document library) covers the scene
     // hold: the scene stays off (focus mode) whatever else asks to pause or resume it
-    hold(on) { held = on; if (on) { if (!paused) { paused = true; } } else if (paused) { paused = false; clock.getDelta(); requestAnimationFrame(frame); } },
-    pause(on) { if (held) on = true; if (on === paused) return; paused = on; if (!on) { clock.getDelta(); requestAnimationFrame(frame); } },
+    hold(on) { held = on; if (on) { if (!paused) { paused = true; } } else if (paused) { paused = false; timer.update(); requestAnimationFrame(frame); } },
+    pause(on) { if (held) on = true; if (on === paused) return; paused = on; if (!on) { timer.update(); requestAnimationFrame(frame); } },
     focus: focusAgent, fit: () => fitAll(true),
     zoomIn: () => { camGoal.zoom = clampZoom((camGoal.zoom || zoom) / 1.3); }, zoomOut: () => { camGoal.zoom = clampZoom((camGoal.zoom || zoom) * 1.3); },
     stats: () => ({ dpr, paused, rooms: modules.size, ...renderer.info.render, programs: renderer.info.programs?.length, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures }),

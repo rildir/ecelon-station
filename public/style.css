@@ -1254,7 +1254,7 @@ body.resizing * { transition: none !important; }
 .lt-r.st-error { color: var(--st-error); background: rgba(255, 77, 106, .15); }
 .chip.warn { color: #ffc2cc; background: rgba(255, 77, 106, .14); }
 /* okunmamış: "Düşünüyor" rengiyle karışmasın diye ayrı bir "yeni" etiketi */
-#agent-list li.unread .li-name::after { content: "yeni"; width: auto; height: auto; padding: 1px 6px; border-radius: 999px; background: var(--cyan); color: var(--ink); font: 700 10px/1.5 var(--f-ui); box-shadow: none; text-transform: uppercase; letter-spacing: .04em; }
+#agent-list li.unread .li-name::after { content: var(--l-new, "new"); width: auto; height: auto; padding: 1px 6px; border-radius: 999px; background: var(--cyan); color: var(--ink); font: 700 10px/1.5 var(--f-ui); box-shadow: none; text-transform: uppercase; letter-spacing: .04em; }
 .cv-by { font-size: 11px; color: var(--lav-3); }
 .cv-by.agent { color: #ffcf91; font-weight: 600; }
 .tc-peek { margin: 2px 0 4px; font-size: 12.5px; line-height: 1.45; color: var(--lav-2); }
@@ -1763,3 +1763,30 @@ body.live #panel, body.live #topbar, body.live #inbox, body.live #mapctl, body.l
   .ts-chip { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; }
   .ts-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* demo tour */
+#tour { position: fixed; z-index: 300; left: calc((100vw - var(--panel-w, 480px)) / 2); bottom: 28px; transform: translateX(-50%); width: min(560px, calc(100vw - var(--panel-w, 480px) - 44px)); padding: 16px 18px; border-radius: 20px; background: linear-gradient(160deg, rgba(36, 42, 74, .97), rgba(22, 26, 46, .97)); border: 1px solid var(--rim); box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
+#tour .tr-top { display: flex; align-items: center; gap: 12px; }
+#tour .tr-kicker { font: 800 11.5px/1 var(--f-display); letter-spacing: .14em; text-transform: uppercase; color: var(--orange); }
+#tour .tr-dots { display: flex; gap: 5px; } #tour .tr-dots i { width: 22px; height: 4px; border-radius: 2px; background: var(--hull-3); transition: background .3s; } #tour .tr-dots i.on { background: var(--orange); }
+#tour h3 { margin: 10px 0 4px; font: 700 19px/1.25 var(--f-display); color: #fff; letter-spacing: -.01em; }
+#tour p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--lav-2); }
+#tour .tr-act { display: flex; gap: 8px; margin-top: 12px; }
+
+/* audit trail */
+.au-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; } .au-head h3 { margin: 0; }
+.au-chain { font: 600 11.5px/1 var(--f-mono); padding: 5px 9px; border-radius: 999px; background: var(--hull-3); color: var(--lav-2); white-space: nowrap; }
+.au-chain:empty { display: none; } .au-chain.ok { background: rgba(47, 210, 127, .14); color: var(--st-done); } .au-chain.bad { background: rgba(255, 77, 106, .16); color: var(--st-error); }
+.au-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 8px; flex-wrap: wrap; }
+.au-kinds { display: flex; gap: 6px; flex-wrap: wrap; }
+.au-all { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--lav-2); cursor: pointer; }
+.au-wrap { max-height: 52vh; }
+.au-items td { font-size: 12.5px; } .au-items .au-t { font: 500 11.5px var(--f-mono); color: var(--lav-3); white-space: nowrap; }
+.au-items .au-w { white-space: nowrap; } .au-items .au-w b { color: #fff; } .au-items .au-w span { display: block; font-size: 11.5px; color: var(--lav-3); }
+.au-items .au-x em { font-style: normal; color: var(--lav-3); margin-right: 6px; } .au-items .au-x code { color: var(--lav); font: 500 12px/1.45 var(--f-mono); word-break: break-word; }
+.au-items .au-x small { display: block; font-size: 11.5px; color: var(--lav-3); margin-top: 2px; } .au-items .au-x small:empty { display: none; }
+.au-items tr.au-day td { position: sticky; top: 30px; background: var(--void); font: 600 10.5px var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--orange); padding: 9px 10px 5px; }
+.au-items tr.bad .au-x code, .au-items tr.au-k-denied .au-x code { color: #ff9aaa; }
+.au-items tr.au-k-allow_once .au-x code, .au-items tr.au-k-allow_always .au-x code, .au-items tr.au-k-permission_mode .au-x code { color: var(--orange); }
+.au-items tr.au-k-verify .au-x code { color: var(--st-done); } .au-items tr.au-k-verify.bad .au-x code { color: #ff9aaa; }
+#au-csv { text-decoration: none; }

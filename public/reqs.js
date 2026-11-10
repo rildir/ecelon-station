@@ -141,6 +141,7 @@ export function createReqs(ctx) {
     if (act === "confirm-all") { try { await ctx.api(`/api/reqs/${encodeURIComponent(proj.team)}/coverage/confirm`, { method: "POST", body: {} }); } catch (err) { ctx.toast(err.message, "bad"); } return; }
     if (act === "verify" || act === "verify-mismatch") return askVerify(act === "verify-mismatch" ? data.items.filter((x) => x.mismatch) : data.items.filter((x) => x.status !== "dropped" && x.verify?.state !== "verified" && (x.status === "done" || x.status === "doing" || x.claim)));
     if (act === "export") return exportMd();
+    if (act === "proof") { window.open(`/api/reqs/${encodeURIComponent(proj)}/report`, "_blank", "noopener"); return; }
     const st = e.target.closest("[data-st]");
     if (st) { const code = st.closest(".rq-row").dataset.code; return statusMenu(st, code); }
     const note = e.target.closest("[data-note]"); if (note && !note.isContentEditable) editNote(note);

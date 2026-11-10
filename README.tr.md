@@ -28,7 +28,7 @@ npm install
 npm run demo
 ```
 
-`http://127.0.0.1:4777` açılır. Bir odaya tıkla, mesaj gönder; sonra **Kapsam**'ı aç ve **Dokümandan çıkar → Kodla karşılaştır → Testçiye doğrulat** düğmelerine sırayla bas. Arayüz dilini üst çubuktaki **EN** düğmesinden Türkçe yapabilirsin.
+`http://127.0.0.1:4777` açılır ve **bütün döngüyü kendi kendine oynatmayı** önerir: analist örnek dokümanı gereksinimlere çevirir, kodla karşılaştırır, başka bir ajan kanıtla doğrular; dokümanın kanıtsız "yapıldı" dediği madde uyuşmazlık olarak kalır. Yaklaşık bir dakika; sen yalnızca izlersin. (Elle yapmak istersen: **Kapsam**'ı aç ve **Dokümandan çıkar → Kodla karşılaştır → Testçiye doğrulat** düğmelerine sırayla bas.) Arayüz dilini üst çubuktaki **EN** düğmesinden Türkçe yapabilirsin.
 
 Gerçek ajanlarla çalışmak için [Claude Code](https://docs.claude.com/en/docs/claude-code) kur (`claude --version` çalışmalı), `npm run demo` yerine `npm start` çalıştır ve **Proje ekle**'ye bas.
 
@@ -60,6 +60,8 @@ Bir analiz dokümanını (Markdown, Word, Excel; MarkItDown ile PDF) projeye ba�
 
 Doküman *yapıldı* diyor ama hiçbir şey doğrulamıyorsa yeşil tik yerine **uyuşmazlık** uyarısı görürsün.
 
+**Kanıt raporu.** Kapsam'da tek tıkla bunların hepsi, odada olmayan biri için (yönetici, müşteri, denetçi) kendi kendine yeten tek bir sayfaya dönüşür: her gereksinim için doküman ne diyor → koddaki satırlar → nasıl, kim tarafından ve ne zaman doğrulandı → kaça mal oldu. Kanıt, rapor üretilirken yeniden kontrol edilir (kod o günden beri değiştiyse madde doğrulanmış *görünmez*); sayfaya dal ve commit damgası basılır. Betik yok, dış dosya yok; yazdır ya da e-postayla gönder.
+
 <p align="center"><img src="docs/media/scope.png" alt="Uyuşmazlık uyarılı gereksinim ekranı" width="860"></p>
 
 ### Doküman kapsaması — hiçbir şey atlanmaz
@@ -68,6 +70,7 @@ Dokümanın her paragrafı, madde işareti, tablo satırı, başlığı ve görs
 <p align="center"><img src="docs/media/coverage.png" alt="Doküman kapsama ekranı" width="860"></p>
 
 ### Gerisi
+- **Denetim kaydı:** çalışan her komut, yazılan her dosya ve verilen her izin (kimin verdiğiyle birlikte) yalnızca eklenen, özet zinciriyle bağlı bir kayda girer; süzebilir, zinciri doğrulayabilir, CSV olarak indirebilirsin.
 - **Varsayılan olarak güvenli:** her görevden önce ve sonra git kontrol noktası (dalına ve index'ine dokunulmaz). Sohbette "3 dosya değişti" kartında farkları gör, tek tıkla geri al.
 - **Gerçek sohbet arayüzü:** model / efor / izin modu, düşünce akışı, araç ayrıntıları, görev listesi, plan onayı, izin kartları, `@dosya` önerisi, mesaj kuyruğu, görsel ekleme, sesle yazma, kullanım ve bağlam göstergeleri.
 - **Belge arşivi:** PDF, Word, Excel, Markdown, CSV; belge içinde arama; otomatik sürüm geçmişi; 7 gün geri alınabilir silme. Sohbette `#` ile iliştir.

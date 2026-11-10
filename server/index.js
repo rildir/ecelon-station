@@ -21,6 +21,9 @@ import { runClaude, resolveClaude, claudeMissingHint, uploadsDir, oneShot, claud
 import { runMock } from "./mockRunner.js";
 import { t, locale, langName, setLang, getLang, getDict, LANGS } from "./i18n.js";
 import { seedDemo } from "./demo.js";
+import { proofReport } from "./report.js";
+import { audit, readAudit, verifyChain, auditCsv, KINDS as AUDIT_KINDS } from "./audit.js";
+const APP_VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version; } catch { return ""; } })();
 import { libraryRouter, describeDocs, referenceLines, linkedDocIds, forgetAgent, docsTextFor } from "./library.js";
 import { dataPath, LOGS, PUBLIC, rootPath, pkgDir, mkdirPrivate, writePrivate } from "./paths.js";
 
@@ -62,6 +65,19 @@ const wss = new WebSocketServer({
   verifyClient: ({ origin, req }) => ALLOWED_HOSTS.has(req.headers.host) && originOk(origin),
 });
 
+// who did it, for the audit trail: an agent (project + role) or the user at the keyboard
+const auditBy = (a, role) => ({ team: a.team || a.id, agent: a.id, who: a.name, role: role || roleOf(a) });
+const AUDIT_FILE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+function auditTool(a, ev) {
+  if (ev.type !== "tool_use") return;
+  const i = ev.input || {};
+  if (ev.name === "Bash" || ev.name === "PowerShell") audit({ ...auditBy(a), kind: "command", what: i.command || ev.summary || "", extra: i.description });
+  else if (AUDIT_FILE_TOOLS.has(ev.name)) {
+    let f = String(i.file_path || i.notebook_path || ev.summary || "");
+    if (a.cwd && path.isAbsolute(f)) { const rel = path.relative(a.cwd, f); if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) f = rel.split(path.sep).join("/"); } // inside the project: show it the way people say it
+    audit({ ...auditBy(a), kind: "file", what: f, extra: ev.name });
+  }
+}
 function broadcast(ev) {
   const data = JSON.stringify(ev);
   for (const c of wss.clients) if (c.readyState === 1) c.send(data);
@@ -153,7 +169,7 @@ function setStatus(agentId, s, extra = {}) {
 // ---------- REST ----------
 app.use("/api/library", libraryRouter({ broadcast: (m) => { broadcast(m); if (m?.type === "library") syncAllCoverage(); } }));
 
-app.get("/api/meta", (_req, res) => res.json({ mock: MOCK, models: MODELS, efforts: EFFORTS, permissions: PERMISSIONS, platform: process.platform, roles: publicRoles(), cli: MOCK ? null : cliInfo(), claudeMissing: MOCK ? null : (resolveClaude() ? null : claudeMissingHint()), lang: getLang(), langs: LANGS }));
+app.get("/api/meta", (_req, res) => res.json({ mock: MOCK, demo: MOCK && process.env.ECELON_DEMO === "1", models: MODELS, efforts: EFFORTS, permissions: PERMISSIONS, platform: process.platform, roles: publicRoles(), cli: MOCK ? null : cliInfo(), claudeMissing: MOCK ? null : (resolveClaude() ? null : claudeMissingHint()), lang: getLang(), langs: LANGS }));
 
 // ---------- usage limits (from Claude Code's rate_limit_event) ----------
 const USAGE_FILE = dataPath("usage.json");
@@ -326,6 +342,7 @@ app.post("/api/agents", (req, res) => {
     if (!isSafeLocalPath(cwd)) return res.status(400).json({ error: t("Network paths (UNC) are not allowed") });
     if (!MOCK && !fs.existsSync(cwd)) return res.status(400).json({ error: t("Folder not found: {dir}", { dir: cwd }) });
     const a = addAgent({ name, cwd, model, effort, permission });
+    audit({ ...auditBy(a), who: t("User"), role: "user", kind: "project", what: t("Project added: {name}", { name: a.name }), extra: a.cwd });
     ensureFullTeams(); // a new project comes with a full team
     broadcast({ type: "agents_changed" });
     res.json(a);
@@ -338,7 +355,15 @@ app.patch("/api/agents/:id", (req, res) => {
     // sessionId goes to `claude --resume`: only plain ids
     if (b.sessionId != null && !(typeof b.sessionId === "string" && /^[\w-]{1,64}$/.test(b.sessionId))) return res.status(400).json({ error: t("Invalid session id") });
     if (Array.isArray(b.convs) && b.convs.some((c) => c?.sessionId != null && !(typeof c.sessionId === "string" && /^[\w-]{1,64}$/.test(c.sessionId)))) return res.status(400).json({ error: t("Invalid session id") }); // a conversation's sessionId is resumed later
+    const before = getAgent(req.params.id);
     const a = updateAgent(req.params.id, b);
+    if (before) {
+      const added = (a.allowedTools || []).filter((x) => !(before.allowedTools || []).includes(x)), removed = (before.allowedTools || []).filter((x) => !(a.allowedTools || []).includes(x));
+      const on = a.name + " · " + ROLES[roleOf(a)].label;
+      if (added.length) audit({ ...auditBy(a), who: t("User"), role: "user", kind: "allow_always", what: added.join(", "), extra: on });
+      if (removed.length) audit({ ...auditBy(a), who: t("User"), role: "user", kind: "allow_always", what: "− " + removed.join(", "), extra: on });
+      if (before.permission !== a.permission) audit({ ...auditBy(a), who: t("User"), role: "user", kind: "permission_mode", what: `${before.permission} → ${a.permission}`, extra: on });
+    }
     broadcast({ type: "agents_changed" });
     res.json(a);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -357,6 +382,7 @@ app.delete("/api/agents/:id", (req, res) => {
   try {
     const whole = req.query.whole === "1";
     const gone = removeAgent(req.params.id, { whole });
+    for (const g of gone) audit({ ...auditBy(g), who: t("User"), role: "user", kind: "project", what: t("Removed: {name}", { name: g.name + " · " + ROLES[roleOf(g)].label }), extra: g.cwd });
     for (const g of gone) { running.get(g.id)?.kill(); forgetAgent(g.id); }
     const removed = gone;
     broadcast({ type: "agents_changed" });
@@ -592,6 +618,7 @@ app.post("/api/agents/:id/revert", async (req, res) => {
     const convId = ensureConvs(a).activeConv;
     const ev = { type: "reverted", agentId: a.id, convId, base, head, count: r.reverted };
     appendLog(a.id, ev, convId); broadcast(ev);
+    audit({ ...auditBy(a), who: t("User"), role: "user", kind: "revert", what: t("{n} {n|file|files} restored", { n: r.reverted }), extra: `${String(base).slice(0, 10)}..${String(head).slice(0, 10)}` });
     res.json(r);
   } catch (e) { res.status(500).json({ error: t("Could not revert: {error}", { error: e.stderr || e.message }) }); }
 });
@@ -668,11 +695,13 @@ async function startPrompt(agentId, body = {}, opts = {}) {
         }
       }
       full.convId = convId; full.t = Date.now(); // the same timestamp in the log and the live stream: the UI weeds out duplicates
+      auditTool(agent, full);
       appendLog(agent.id, full, convId);
       broadcast(full);
     };
 
     const allowOnce = (Array.isArray(body.allowOnce) ? body.allowOnce : []).map(String).slice(0, 20);
+    if (allowOnce.length) audit({ ...auditBy(agent), who: t("User"), role: "user", kind: "allow_once", what: allowOnce.join(", "), extra: agent.name + " · " + ROLES[roleOf(agent)].label });
     // model/effort/permission for this message only (the persistent setting does not change) — used by "Send to all"
     const ov = body.override || {};
     const once = {};
@@ -985,6 +1014,7 @@ async function runTool(a, tool, args = {}) {
         if (ok && !ran) return ({ error: t("You ran no command in this turn.") + " " + t("To say 'verified', REALLY try the item: run the relevant test (npm test, dotnet test, pytest…) or walk through the scenario with a command/request; then call verify_requirement again.") + " " + t("Reading the code is not verification.") });
         const r = reqs.verify(tk, args.code, { result: args.result, how: args.how, evidence: args.evidence, criteria: args.criteria, by }, a.cwd);
         if (r.error) return ({ error: r.error });
+        audit({ ...auditBy(a), kind: "verify", what: `${String(args.code).toUpperCase()}: ${ok ? "verified" : "failed"}`, ok, extra: args.evidence || args.how });
         broadcast({ type: "reqs", team: tk });
         if (r.item.verify.state === "failed" && r.item.claim === "done") teamEvent(leadOfTeam(a).id, { kind: "note", text: "⚠ " + t("{code}: the document says 'done' but the tester could not verify it — {how}", { code: r.item.code, how: r.item.verify.how }) });
         return ({ message: `${r.item.code} → ${reqs.verifyName(r.item.verify.state)}` });
@@ -1237,9 +1267,8 @@ app.get("/api/replay/:team", async (req, res) => {
 });
 // Payroll: what each member of a team cost over a period, and that cost spread over the requirement items the runs
 // touched (the items named in the prompt, set/verified by the requirement tools, or named in the reply).
-app.get("/api/payroll/:team", async (req, res) => {
-  const since = Number(req.query.since) || Date.now() - 7 * 86400000;
-  const members = listAgents().filter((x) => (x.team || x.id) === req.params.team);
+async function payrollOf(team, since) {
+  const members = listAgents().filter((x) => (x.team || x.id) === team);
   const perMember = {}, perItem = {};
   for (const m of members) {
     const pm = perMember[m.id] = { id: m.id, name: m.name, role: roleOf(m), costUsd: 0, runs: 0, durationMs: 0, turns: 0 };
@@ -1263,9 +1292,20 @@ app.get("/api/payroll/:team", async (req, res) => {
     pm.costUsd = +pm.costUsd.toFixed(4);
   }
   // item titles from the requirement list, when there is one
-  let titles = {}; try { for (const it of reqs.load(req.params.team).items) titles[it.code] = { title: it.title, status: it.status, verified: it.verify?.state }; } catch {}
+  let titles = {}; try { for (const it of reqs.load(team).items) titles[it.code] = { title: it.title, status: it.status, verified: it.verify?.state }; } catch {}
   const items = Object.values(perItem).map((it) => ({ ...it, costUsd: +it.costUsd.toFixed(4), ...(titles[it.code] || {}) })).sort((a, b) => b.costUsd - a.costUsd);
-  res.json({ since, members: Object.values(perMember), items, totalUsd: +Object.values(perMember).reduce((s, m) => s + m.costUsd, 0).toFixed(4) });
+  return { since, members: Object.values(perMember), items, totalUsd: +Object.values(perMember).reduce((s, m) => s + m.costUsd, 0).toFixed(4) };
+}
+app.get("/api/payroll/:team", async (req, res) => { res.json(await payrollOf(req.params.team, Number(req.query.since) || Date.now() - 7 * 86400000)); });
+// Proof report: the whole evidence chain of a project as one self-contained page (see report.js). ?download=1 saves it.
+app.get("/api/reqs/:team/report", async (req, res) => {
+  const team = req.params.team, lead = listAgents().find((x) => (x.team || x.id) === team && roleOf(x) === "dev") || listAgents().find((x) => (x.team || x.id) === team);
+  if (!lead) return res.status(404).json({ error: t("Agent not found.") });
+  let coverage = null; try { coverage = cov.compute(team, reqs.load(team).items).stats; } catch {}
+  const html = await proofReport({ team, name: lead.name, cwd: lead.cwd, coverage, payroll: await payrollOf(team, 0), version: APP_VERSION });
+  res.set("Content-Type", "text/html; charset=utf-8").set("Cache-Control", "no-store").set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
+  if (req.query.download) res.set("Content-Disposition", `attachment; filename="proof-report-${String(lead.name).replace(/[^\w.-]+/g, "_").slice(0, 60)}-${new Date().toISOString().slice(0, 10)}.html"`);
+  res.send(html);
 });
 app.get("/api/reqs/:team/summary", (req, res) => {
   const cwd = teamCwd(req.params.team); if (cwd) reqs.refreshStale(req.params.team, cwd);
@@ -1280,7 +1320,15 @@ app.post("/api/reqs/:team/:code/verify", (req, res) => {
   const { result, how, evidence } = req.body || {};
   const r = reqs.verify(req.params.team, req.params.code, { result, how: how || t("The user verified it by hand"), evidence, by: t("User"), manual: true }, teamCwd(req.params.team) || ".");
   if (r.error) return res.status(400).json(r);
+  audit({ team: req.params.team, who: t("User"), role: "user", kind: "verify", what: `${String(req.params.code).toUpperCase()}: ${r.item.verify.state} (${t("by hand")})`, ok: r.item.verify.state === "verified", extra: evidence || how });
   broadcast({ type: "reqs", team: req.params.team }); res.json(r);
+});
+// Audit trail (see audit.js): what ran, what was written, who allowed what. Newest first; ?team= ?kind=a,b ?since=
+const auditQuery = (req) => ({ team: String(req.query.team || ""), kinds: req.query.kind ? String(req.query.kind).split(",").filter((k) => AUDIT_KINDS.includes(k)) : null, since: Number(req.query.since) || 0, limit: Math.min(Number(req.query.limit) || 500, 20000) });
+app.get("/api/audit", (req, res) => res.json({ entries: readAudit(auditQuery(req)), chain: req.query.check ? verifyChain() : undefined }));
+app.get("/api/audit.csv", (req, res) => {
+  const names = Object.fromEntries(listAgents().filter((x) => roleOf(x) === "dev").map((x) => [x.team || x.id, x.name]));
+  res.set("Content-Type", "text/csv; charset=utf-8").set("Content-Disposition", `attachment; filename="audit-${new Date().toISOString().slice(0, 10)}.csv"`).send(auditCsv(readAudit({ ...auditQuery(req), limit: 20000 }), names));
 });
 app.patch("/api/reqs/:team/:code", (req, res) => {
   const { status, note, evidence, claim } = req.body || {};
@@ -1309,6 +1357,7 @@ function notify(agentId, result) {
   if (chains.get(agentId)?.pending.size) return; // the team is still working
   const denials = result.permissionDenials || [];
   const kind = denials.length ? "permission" : result.isError ? "error" : "done";
+  if (denials.length) { const ag = getAgent(agentId); if (ag) audit({ ...auditBy(ag), kind: "denied", what: [...new Set(denials.map((d) => d.spec || d.tool).filter(Boolean))].slice(0, 12).join(", "), ok: false }); }
   const team = teamOf(agentId);
   const who = team.length > 1 && roleOf(a) !== "dev" ? `${a.name} · ${ROLES[roleOf(a)].label}` : a.name;
   const first = headline(agentId);

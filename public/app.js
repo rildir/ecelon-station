@@ -641,6 +641,40 @@ async function openPayroll(tk) {
 }
 $("#py-close").onclick = () => $("#dlg-payroll").close();
 
+// ================= audit trail =================
+const AUDIT_GROUPS = () => [["all", t("All"), null], ["perm", t("Permissions"), ["allow_once", "allow_always", "permission_mode", "denied"]], ["command", t("Commands"), ["command"]], ["file", t("Files"), ["file"]], ["verify", t("Verification"), ["verify", "revert"]], ["project", t("Projects"), ["project"]]];
+const AUDIT_LABEL = () => ({ command: t("ran"), file: t("wrote"), allow_once: t("allowed once"), allow_always: t("always allows"), permission_mode: t("permission mode"), denied: t("was refused"), verify: t("verified"), revert: t("undid"), project: "" });
+let auditState = { team: "", group: "all", all: false };
+async function openAudit(tk) {
+  auditState = { team: tk || "", group: "all", all: !tk };
+  const d = $("#dlg-audit"); $("#au-all").checked = auditState.all; $("#au-chain").textContent = "";
+  if (!d.open) d.showModal();
+  await renderAudit(true);
+}
+async function renderAudit(check = false) {
+  const groups = AUDIT_GROUPS(), g = groups.find((x) => x[0] === auditState.group) || groups[0], L = AUDIT_LABEL();
+  const qs = new URLSearchParams(); if (!auditState.all && auditState.team) qs.set("team", auditState.team); if (g[2]) qs.set("kind", g[2].join(",")); if (check) qs.set("check", "1");
+  $("#au-kinds").innerHTML = groups.map(([k, l]) => `<button type="button" class="b2-chip${k === auditState.group ? " on" : ""}" data-g="${k}">${escHtml(l)}</button>`).join("");
+  $("#au-csv").href = "/api/audit.csv?" + qs.toString().replace(/&?check=1/, "");
+  let r; try { r = await api("/api/audit?" + qs); } catch (e) { toast(e.message, "bad"); return; }
+  if (r.chain) { const c = $("#au-chain"); c.className = "au-chain " + (r.chain.ok ? "ok" : "bad"); c.textContent = r.chain.ok ? t("Chain intact · {n} {n|entry|entries}", { n: r.chain.count }) : t("Chain broken at entry {n}", { n: r.chain.brokenAt }); c.title = t("Every entry carries the hash of the previous one. 'Broken' means a line was changed or removed after it was written."); }
+  const tb = $("#au-rows"); tb.innerHTML = ""; $("#au-empty").hidden = r.entries.length > 0; tb.closest(".py-wrap").hidden = !r.entries.length;
+  let day = "";
+  for (const e of r.entries) {
+    if (dayKey(e.t) !== day) { day = dayKey(e.t); const h = document.createElement("tr"); h.className = "au-day"; h.innerHTML = "<td colspan=\"3\"></td>"; h.firstChild.textContent = dayLabel(e.t); tb.append(h); }
+    const tr = document.createElement("tr"); tr.className = "au-k-" + e.kind + (e.ok === false ? " bad" : "");
+    tr.innerHTML = "<td class=\"au-t\"></td><td class=\"au-w\"><b></b><span></span></td><td class=\"au-x\"><em></em><code></code><small></small></td>";
+    tr.querySelector(".au-t").textContent = new Date(e.t).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    tr.querySelector("b").textContent = e.role === "user" ? t("You") : e.who; tr.querySelector(".au-w span").textContent = e.role === "user" ? "" : (meta.roles?.[e.role]?.label || e.role);
+    tr.querySelector("em").textContent = L[e.kind] ?? e.kind; tr.querySelector("code").textContent = e.what; tr.querySelector("small").textContent = e.extra || "";
+    tr.title = e.h; tb.append(tr);
+  }
+}
+$("#au-kinds").onclick = (e) => { const b = e.target.closest("[data-g]"); if (b) { auditState.group = b.dataset.g; renderAudit(); } };
+$("#au-all").onchange = (e) => { auditState.all = e.target.checked; renderAudit(); };
+$("#au-close").onclick = () => $("#dlg-audit").close();
+$("#btn-audit").onclick = () => { $("#menu-pop").hidden = true; openAudit(current() ? teamKey(current()) : ""); };
+
 // the TV replays the day of a room: every run, hand-off, file written and test result, compressed into ~40 seconds
 let replay = null;
 const TEST_RE = () => TEST_CMD;
@@ -714,6 +748,56 @@ function stopReplay() {
 
 // morning stand-up: the first time the station opens in a day, the camera tours the rooms; each team gathers at its
 // meeting table and the card says what got done yesterday, what is open today and what blocks it
+// ================= demo tour =================
+// In demo mode the station offers to play the whole loop by itself once: the analyst turns the document into
+// requirements, compares them with the code, a different agent (the tester) verifies with evidence, and the one
+// item the document calls "done" without proof ends up as a mismatch. Nothing is faked for the tour: it sends the
+// same three prompts the Scope buttons send and waits for the (scripted) agents to finish.
+const TOUR_KEY = "ecelon.tourDone";
+let tour = null;
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+async function waitRun(id, max = 60000) {
+  const t0 = Date.now(); let seen = false;
+  while (tour && Date.now() - t0 < max) {
+    const a = agents.find((x) => x.id === id);
+    if (a && isBusy(a)) seen = true; else if (seen || Date.now() - t0 > 8000) return;
+    await pause(250);
+  }
+}
+function tourCard({ step = 0, title, text, actions = [] }) {
+  const box = $("#tour"); if (box.parentNode !== document.body) document.body.append(box); // above every screen, the Scope screen included
+  box.hidden = false;
+  box.querySelector(".tr-dots").innerHTML = [1, 2, 3, 4].map((i) => `<i class="${i <= step ? "on" : ""}"></i>`).join("");
+  box.querySelector("h3").textContent = title; box.querySelector("p").textContent = text;
+  const act = box.querySelector(".tr-act"); act.innerHTML = "";
+  for (const [label, fn, primary] of actions) { const b = document.createElement("button"); b.type = "button"; b.className = "btn sm " + (primary ? "primary" : "ghost"); b.textContent = label; b.onclick = fn; act.append(b); }
+}
+function endTour(done = true) { tour = null; $("#tour").hidden = true; if (done) lsSet(TOUR_KEY, 1); }
+async function playTour() {
+  const lead = agents.find((a) => roleOf(a) === "dev" && /api/i.test(a.name)) || agents.find((a) => roleOf(a) === "dev");
+  if (!lead || tour) return;
+  const team = teamOf(lead), analyst = team.find((a) => roleOf(a) === "analyst"), tester = team.find((a) => roleOf(a) === "tester");
+  if (!analyst || !tester) return;
+  tour = { lead }; lsSet(TOUR_KEY, 1);
+  const skip = [t("Skip"), () => endTour()];
+  const run = async (step, title, text, agent, prompt) => {
+    if (!tour) return;
+    tourCard({ step, title, text, actions: [skip] }); station.focus(lead.id);
+    await sendPrompt({ text: prompt }, agent); await waitRun(agent.id); await pause(900);
+  };
+  await run(1, t("The analyst reads the document"), t("It turns the linked analysis document into numbered requirements, each with the document's own wording."), analyst, t("Extract the requirements from the linked documents and save them to the Scope list."));
+  await run(2, t("…and checks every item against the code"), t("Each requirement gets a status and a pointer to the file and line where it lives, or a note saying it is missing."), analyst, t("Compare the requirements with the code and update their status."));
+  await run(3, t("A different agent verifies"), t("The tester did not write the code. It runs the scenarios and must attach evidence: lines or tests that really exist in the project."), tester, t("Verify the requirements with evidence."));
+  if (!tour) return;
+  reqsUI.open(lead);
+  tourCard({ step: 4, title: t("One item says “done” but nothing proves it"), text: t("That is a mismatch, not a green tick. The proof report puts the whole chain on one page you can hand to somebody else."),
+    actions: [[t("Open the proof report"), () => { window.open(`/api/reqs/${encodeURIComponent(teamKey(lead))}/report`, "_blank", "noopener"); endTour(); }, true], [t("Close"), () => endTour()]] });
+}
+function offerTour() {
+  if (!meta.demo || tour || lsGet(TOUR_KEY, 0)) return;
+  tourCard({ step: 0, title: t("See the whole loop in a minute"), text: t("Document → requirements → code → verification with evidence, played by the sample team. You only watch."),
+    actions: [[t("Play"), () => playTour(), true], [t("Not now"), () => endTour()]] });
+}
 const STANDUP_KEY = "standupDay";
 const sameDay = () => new Date().toDateString();
 let standup = null;
@@ -766,7 +850,7 @@ async function startStandup(auto = false) {
 }
 $("#standup-btn").onclick = () => (standup ? standup.end() : startStandup(false));
 // once a day, after 06:00, a few seconds after opening (when the data is in)
-setTimeout(() => { let last = ""; try { last = localStorage.getItem(STANDUP_KEY) || ""; } catch {} if (last !== sameDay() && new Date().getHours() >= 6 && !selectedId && !document.body.classList.contains("focus")) startStandup(true); }, 6000);
+setTimeout(() => { let last = ""; try { last = localStorage.getItem(STANDUP_KEY) || ""; } catch {} if (last !== sameDay() && new Date().getHours() >= 6 && !meta.demo && !selectedId && !document.body.classList.contains("focus")) startStandup(true); }, 6000);
 
 // approval queue: everyone waiting for permission, across all projects, grant from here
 function renderInbox() {
@@ -2398,10 +2482,12 @@ $("#bc-form").addEventListener("submit", async (e) => {
 meta = await api("/api/meta");
 usage = await api("/api/usage").catch(() => ({})); renderUsage();
 $("#mode-badge").textContent = meta.mock ? t("Demo mode") : "";
+document.body.style.setProperty("--l-new", JSON.stringify(t("new")));
 if (meta.claudeMissing) { const w = $("#cli-warn"); w.textContent = meta.claudeMissing; w.hidden = false; }
 await refresh();
 lib.load().catch(() => {});
 refreshGitSummary(); refreshOverview(); refreshPayroll();
+setTimeout(offerTour, 1500);
 connectWS();
 const q = new URLSearchParams(location.search).get("agent");
 if (q) { const a = agents.find((x) => x.name === q || x.id === q); if (a) selectAgent(a.id); }
