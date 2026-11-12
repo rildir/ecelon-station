@@ -39,6 +39,10 @@ id_rsa*
 secrets*
 credentials*
 
+# desktop build output and the Node binary bundled into it
+dist/
+build/node/
+
 # test artefacts
 test-results/
 playwright-report/

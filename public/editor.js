@@ -9,7 +9,7 @@ const dirOf = (p) => { const i = String(p).lastIndexOf("/"); return i < 0 ? "" :
 const IMG = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i;
 
 let monacoP = null;
-function loadMonaco() {
+export function loadMonaco() {
   if (monacoP) return monacoP;
   monacoP = new Promise((ok, no) => {
     window.MonacoEnvironment = { getWorkerUrl: () => "/vendor/monaco/vs/base/worker/workerMain.js" };

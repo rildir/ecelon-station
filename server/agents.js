@@ -12,7 +12,7 @@ const FILE = path.join(DATA_DIR, "agents.json");
 
 export const MODELS = [
   "sonnet", "opus", "fable", "haiku",                       // aliases: always the newest version
-  "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", // pinned versions
+  "claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", // pinned versions
 ];
 // A full model name can also be given for (older) models not in the list
 const validModel = (m) => typeof m === "string" && /^[A-Za-z0-9][A-Za-z0-9._\-\[\]]{1,63}$/.test(m);

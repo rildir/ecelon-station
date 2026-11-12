@@ -88,6 +88,17 @@ Every paragraph, list item, table row, heading and image of the document is trac
 - Ecelon Station itself never pushes, uploads or publishes anything. In the default permission modes Claude Code asks you before running commands such as `git push`; you answer on a permission card in the chat.
 - "Full access" mode lets an agent run commands without asking. Use it only on projects you trust.
 
+## Desktop app (Windows)
+
+The same station in a window of its own: its own icon in the taskbar, no browser menu or developer tools, a tray icon
+that keeps agents working when the window is closed. Download the installer or the portable exe from
+[Releases](https://github.com/rildir/ecelon-station/releases), or run it from a clone with `npm run desktop`.
+
+The exe is not code-signed yet, so Windows SmartScreen warns on first run ("More info" → "Run anyway"). The installed
+app keeps its data in `%APPDATA%\Ecelon Station\data`; set `ECELON_DATA` to use another folder. Dictation is not
+available in the desktop app. Without WebGL (some remote desktops and virtual machines) the station still runs, in the
+professional view only.
+
 ## Requirements
 
 - Node.js 20+ and a modern browser with WebGL (Chrome, Edge, Firefox, Safari).

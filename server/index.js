@@ -177,6 +177,15 @@ const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 function codeStamp() { try { return fs.readdirSync(SERVER_DIR).filter((n) => n.endsWith(".js")).sort().map((n) => { const st = fs.statSync(path.join(SERVER_DIR, n)); return `${n}:${st.size}:${Math.round(st.mtimeMs)}`; }).join("|"); } catch { return ""; } }
 const BOOT_STAMP = codeStamp(), BOOT_AT = Date.now();
 const isStale = () => codeStamp() !== BOOT_STAMP;
+// The desktop app started this server and owns it: on Quit it asks the server to stop. The request must carry the
+// token the app gave the server at start (it survives a restart through the environment); without a token there is
+// no such route, so nothing else on the machine can stop the server this way.
+const SHELL_TOKEN = process.env.ECELON_SHELL_TOKEN || "";
+app.post("/api/quit", (req, res) => {
+  if (!SHELL_TOKEN || req.headers["x-ecelon-shell"] !== SHELL_TOKEN) return res.status(404).json({ error: t("Not found") });
+  res.json({ ok: true, running: running.size });
+  setTimeout(() => { try { for (const r of running.values()) r.kill?.(); for (const c of wss.clients) c.terminate(); server.close(); } catch {} setTimeout(() => process.exit(0), 150); }, 80);
+});
 app.post("/api/restart", (req, res) => {
   if (running.size && !req.body?.force) return res.status(409).json({ error: t("Agents are working. Wait for them to finish, or stop them, before restarting the server."), running: running.size });
   res.json({ ok: true });

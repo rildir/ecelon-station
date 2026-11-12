@@ -46,7 +46,9 @@
     "test": "node scripts/run-tests.mjs",
     "lint": "eslint . && node scripts/i18n-check.mjs --strict",
     "prepublishOnly": "npm run lint && npm test",
-    "dev:demo": "node bin/ecelon-station.js --demo --watch"
+    "dev:demo": "node bin/ecelon-station.js --demo --watch",
+    "desktop": "electron desktop/main.js",
+    "dist": "electron-builder --win --publish never"
   },
   "dependencies": {
     "@fontsource/bricolage-grotesque": "^5.3.0",
@@ -62,9 +64,56 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "eslint": "^10.13.0",
-    "globals": "^17.13.0"
+    "globals": "^17.13.0",
+    "electron": "45.3.1",
+    "electron-builder": "26.18.0"
   },
   "bugs": {
     "url": "https://github.com/rildir/ecelon-station/issues"
+  },
+  "build": {
+    "appId": "dev.ecelon.station",
+    "productName": "Ecelon Station",
+    "asar": false,
+    "extraMetadata": {
+      "main": "desktop/main.js"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "desktop/**",
+      "server/**",
+      "public/**",
+      "demo/**",
+      "package.json",
+      "LICENSE",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "build/node",
+        "to": "node",
+        "filter": [
+          "node.exe"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "public/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Ecelon Station"
+    },
+    "portable": {
+      "artifactName": "Ecelon-Station-${version}-portable.exe"
+    }
   }
 }

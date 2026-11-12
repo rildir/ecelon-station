@@ -3,6 +3,7 @@ import { createLibrary, badge, KIND } from "./library.js";
 import { sfx } from "./sounds.js";
 import { createReqs } from "./reqs.js";
 import { createTasks } from "./tasks.js";
+import { createPractice } from "./practice.js";
 import { createGit } from "./gitui.js";
 import { createEditor } from "./editor.js";
 import { createRuns } from "./runui.js";
@@ -110,17 +111,17 @@ const PERMS = [
 ];
 // Like the picker in Claude chat: featured + "More models"
 const MODELS_MAIN = [
-  ["claude-fable-5-1", "Fable 5.1", t("Hard reasoning and long agentic work")],
+  ["claude-fable-5-2", "Fable 5.2", t("Hard reasoning and long agentic work")],
   ["claude-opus-5-5", "Opus 5.5", t("Strong for long coding tasks")],
   ["claude-sonnet-5-5", "Sonnet 5.5", t("Balance of speed and intelligence")],
   ["claude-haiku-5-5", "Haiku 5.5", t("Fastest, for simple tasks")],
 ];
 const MODELS_MORE = [
-  ["claude-fable-5", "Fable 5"], ["claude-opus-5", "Opus 5"], ["claude-sonnet-5", "Sonnet 5"],
+  ["claude-fable-5-1", "Fable 5.1"], ["claude-fable-5", "Fable 5"], ["claude-opus-5", "Opus 5"], ["claude-sonnet-5", "Sonnet 5"],
   ["claude-opus-4-8", "Opus 4.8"], ["claude-opus-4-7", "Opus 4.7"], ["claude-opus-4-6", "Opus 4.6"],
   ["claude-sonnet-4-6", "Sonnet 4.6"], ["claude-haiku-4-5-20251001", "Haiku 4.5"],
 ];
-const ALIAS = { sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-5", fable: "claude-fable-5-1", haiku: "claude-haiku-5-5" };
+const ALIAS = { sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-5", fable: "claude-fable-5-2", haiku: "claude-haiku-5-5" };
 const modelName = (id) => {
   const m = [...MODELS_MAIN, ...MODELS_MORE].find(([k]) => k === (ALIAS[id] || id));
   return m ? m[1] : id;
@@ -167,7 +168,12 @@ const lastTool = new Map(), runStart = new Map(), actText = new Map(), lastEvent
 const current = () => agents.find((x) => x.id === selectedId);
 const indexOf = (id) => agents.findIndex((x) => x.id === id);
 
-const station = createStation($("#scene"), {
+// The office needs WebGL. Where there is none (a remote desktop, a locked-down or virtual machine) the station
+// must still work: it then runs in the professional view only, and every call to the scene is a no-op.
+const NO_SCENE = new Proxy({ daylight: () => ({ k: 1, dusk: 0 }), roomsWithWork: () => [], pickAt: () => null, stats: () => ({}), stream: () => { throw new Error("no scene"); }, snapshot: () => { throw new Error("no scene"); } }, { get: (o, k) => (k in o ? o[k] : () => undefined), set: (o, k, v) => { o[k] = v; return true; } });
+let noGL = false;
+const makeStation = (opts) => { try { return createStation($("#scene"), opts); } catch (e) { noGL = true; console.warn("[ecelon] no WebGL, professional view only:", e?.message || e); return NO_SCENE; } };
+const station = makeStation({
   onSelect: (id) => selectAgent(id),
   onProp: (tk, kind) => onProp(tk, kind),
   propTip: (tk, kind) => propTip(tk, kind),
@@ -195,7 +201,7 @@ window.__station = station; window.__pick = (id) => selectAgent(id); // for debu
 // Two faces of the same station: the office (3D) and the professional view (a roster, nothing playful). The choice
 // is per browser. In the professional view the 3D scene does not run at all.
 const VIEW_KEY = "ecelon.view";
-let proView = (new URLSearchParams(location.search).get("view") || lsGet(VIEW_KEY, "office")) === "pro";
+let proView = noGL || (new URLSearchParams(location.search).get("view") || lsGet(VIEW_KEY, "office")) === "pro";
 { const rawPause = station.pause.bind(station); let want = false; station.pause = (on) => { want = !!on; rawPause(want || proView); }; station.pauseSync = () => rawPause(want || proView); }
 
 // ================= document library =================
@@ -244,6 +250,15 @@ const tasksUI = createTasks({
   onOpen: () => { station.pause(true); closePops(); },
   onClose: () => { station.pause(false); renderTasksBadge(); },
 });
+// Practice: a JavaScript scratch pad. "Ask for a hint" opens a new free chat with the code in the message box
+// (not sent: the user reads it, changes it, sends it).
+const practiceUI = createPractice({
+  toast, confirmBox, prompt: (...a) => askText(...a),
+  askHint: async (text) => { await newChat(); const p = $("#prompt"); if (p) { p.value = text; p.dispatchEvent(new Event("input", { bubbles: true })); p.focus(); } },
+  onOpen: () => { station.pause(true); closePops(); },
+  onClose: () => { station.pause(false); },
+});
+$("#btn-practice").onclick = () => practiceUI.open();
 let tasksSeq = 0;
 async function renderTasksBadge(a = current()) {
   if (!a) return; const seq = ++tasksSeq;
@@ -779,6 +794,7 @@ function applyView() {
   if (proView) { if (live) stopLive(); renderBoardNow(); }
 }
 $("#btn-view").onclick = () => { proView = !proView; lsSet(VIEW_KEY, proView ? "pro" : "office"); applyView(); };
+if (noGL) $("#btn-view").hidden = true; // nothing to switch to
 
 // ================= the server is older than its files =================
 // The server keeps running when the window is closed, so after an update the page can be newer than the process
@@ -795,6 +811,28 @@ function staleBar(kind) {
     for (let i = 0; i < 80; i++) { await pause(500); try { const m = await fetch("/api/meta").then((r) => r.json()); if (m.build && m.build !== was) { location.reload(); return; } } catch {} }
     btn.disabled = false; btn.textContent = t("Restart the server"); toast(t("The server did not come back. Open Ecelon Station again from its shortcut."), "bad");
   };
+}
+
+// ================= app window =================
+// Opened by the launcher as an app window (?app=1): behave like a desktop app — the browser's developer shortcuts
+// and its own right-click menu stay out of the way. This is tidiness, not protection: the server never trusts the
+// page. Text fields keep their menu (copy, paste, spelling); ?dev=1 switches it off for the session.
+{
+  const q = new URLSearchParams(location.search); let on = false;
+  try { if (q.get("dev") === "1") sessionStorage.removeItem("ecelon.app"); else if (q.get("app") === "1") sessionStorage.setItem("ecelon.app", "1"); on = sessionStorage.getItem("ecelon.app") === "1"; } catch { on = q.get("app") === "1" && q.get("dev") !== "1"; }
+  if (on) {
+    document.documentElement.classList.add("app-window");
+    if (/Electron\//.test(navigator.userAgent)) document.documentElement.classList.add("no-speech"); // the desktop shell has no speech service: no dictation button that cannot work
+    window.addEventListener("keydown", (e) => {
+      const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;
+      if (e.key === "F12" || (mod && e.shiftKey && (k === "i" || k === "j" || k === "c")) || (mod && !e.shiftKey && k === "u")) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
+    window.addEventListener("contextmenu", (e) => {
+      const el = e.target instanceof Element ? e.target : null;
+      if (el?.closest("input, textarea, [contenteditable], .monaco-editor") || String(getSelection() || "").trim()) return;
+      e.preventDefault(); // handlers of our own menus still run: this only keeps the browser's menu closed
+    });
+  }
 }
 
 // ================= free chats =================
@@ -851,7 +889,7 @@ async function undoImports() {
   try { const r = await api("/api/cc-sessions/undo", { method: "POST", body: {} }); await refresh(); if (current()) loadChat(); await refreshCcSessions(); toast(r.skipped?.length ? t("{n} taken back; still running, left alone: {names}", { n: r.removed, names: r.skipped.join(", ") }) : t("{n} taken back.", { n: r.removed }), "good"); }
   catch (err) { toast(err.message, "bad"); }
 }
-$("#btn-attach").onclick = async () => {
+$("#btn-toproject").onclick = async () => {
   const a = current(); if (!a?.solo) return;
   try {
     const r = await api("/api/pick-folder", { method: "POST", body: { start: "" } }); if (r.cancelled || !r.path) return;
@@ -1078,7 +1116,7 @@ function renderInbox() {
   const waiting = agents.filter((a) => a.attention?.kind === "permission" && !isBusy(a));
   box.hidden = !waiting.length; if (!waiting.length) { box.innerHTML = ""; return; }
   const key = waiting.map((a) => a.id + a.attention.at).join("|"); if (box.dataset.key === key) return; box.dataset.key = key;
-  let collapsed = false; try { collapsed = localStorage.getItem("inboxCollapsed") === "1"; } catch {}
+  let collapsed = false; try { const v = localStorage.getItem("inboxCollapsed"); collapsed = v === "1" || (v == null && proView); } catch {}
   box.classList.toggle("collapsed", collapsed);
   box.innerHTML = `<button type="button" class="ib-head" aria-expanded="${!collapsed}"><span class="ib-dot"></span>${t("Waiting for your approval ({n})", { n: waiting.length })}<svg class="ib-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>`;
   box.querySelector(".ib-head").onclick = (e) => {
@@ -1232,7 +1270,7 @@ function fillHeader(a) {
     ch.hidden = !links.length; ch.textContent = links.length ? `↔ ${links.map((x) => x.name).join(", ")}` : ""; ch.title = t("Linked projects: when an API or something shared changes, the leads notify each other. Click to edit.");
   }
   const att = teamOf(a).find((m) => m.attention);
-  if (att && !isBusy(a)) { const p = $("#a-status"); p.className = "status st-error"; p.textContent = `${teamOf(a).length > 1 && att.id !== a.id ? roleLabel(att) + ": " : ""}${att.attention.text}`; }
+  if (att && !isBusy(a)) { const p = $("#a-status"); p.className = "status st-error"; p.textContent = p.title = `${teamOf(a).length > 1 && att.id !== a.id ? roleLabel(att) + ": " : ""}${att.attention.text}`; }
 }
 
 // context ring: how much of the model's context window this conversation has used
@@ -1285,7 +1323,7 @@ async function patch(body) {
 }
 
 function setStatus(st, busyFlag) {
-  const p = $("#a-status"); p.className = "status st-" + st; p.textContent = STATUS_TEXT[st] || st;
+  const p = $("#a-status"); p.className = "status st-" + st; p.textContent = STATUS_TEXT[st] || st; p.title = "";
   const busy = busyFlag ?? (st === "thinking" || st === "tool");
   $("#btn-stop").hidden = !busy; $("#btn-send").disabled = busy;
   $("#a-portrait").classList.toggle("busy", busy);
@@ -1418,7 +1456,7 @@ document.addEventListener("keydown", (e) => {
   // in the message box Esc only leaves focus (does not close the panel; what you typed stays)
   if (e.key === "Escape" && e.target === $("#prompt") && $("#mention-pop").hidden) { $("#prompt").blur(); e.preventDefault(); return; }
   // e.defaultPrevented: an upper layer (Scope, Git, editor, documents) already used Esc → do not close the panel
-  if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]") || lib.isOpen || reqsUI.isOpen || tasksUI.isOpen || gitUI.isOpen || edUI.isOpen || runUI.isOpen) return;
+  if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]") || lib.isOpen || reqsUI.isOpen || tasksUI.isOpen || gitUI.isOpen || edUI.isOpen || runUI.isOpen || practiceUI.isOpen) return;
   if ([...document.querySelectorAll(".pop")].some((p) => !p.hidden)) closePops(); else if (selectedId) closePanel();
 });
 
@@ -1854,6 +1892,7 @@ function renderEvent(ev, replay = false) {
 const ST_NAME = { A: t("New"), M: t("Modified"), D: t("Deleted"), R: t("Renamed") };
 function changesCard(ev, agentId) {
   if (ev.norepo) {
+    if (agents.find((x) => x.id === agentId)?.solo) return; // a free chat lives in a scratch folder: no git talk there
     const n = document.createElement("div"); n.className = "msg team-note";
     n.innerHTML = `<span>${t("This project is not a git repository; git is needed to see and undo changes.")}</span><button type="button" class="tc-open">${t("Initialize git")}</button>`;
     n.querySelector("button").onclick = async () => { try { await api(`/api/agents/${agentId}/git-init`, { method: "POST" }); toast(t("Git initialized; changes can be undone from the next task on")); n.remove(); } catch (err) { toast(err.message, "bad"); } };
@@ -2113,7 +2152,7 @@ function openBell() {
       const att = a.attention, lead = leadOf(a), c = document.createElement("div"); c.className = "b2-wcard k-" + att.kind;
       c.innerHTML = `<span class="portrait"></span><div class="b2-wmain"><b></b><code></code></div><div class="b2-wact"></div>`;
       c.querySelector(".portrait").style.backgroundImage = portraitUrl(a.char ?? 0);
-      c.querySelector("b").textContent = `${lead.name}${teamOf(a).length > 1 ? " · " + roleLabel(a) : ""}`;
+      c.querySelector("b").textContent = c.querySelector("b").title = `${lead.name}${teamOf(a).length > 1 ? " · " + roleLabel(a) : ""}`;
       c.querySelector("code").textContent = att.kind === "permission" ? (att.items?.[0] ? `${att.items[0].tool}: ${att.items[0].what}` : att.text) : att.text;
       const act = c.querySelector(".b2-wact");
       if (att.kind === "permission" && att.specs?.length) { const b = document.createElement("button"); b.type = "button"; b.className = "btn sm primary"; b.textContent = t("Allow"); b.title = t("Allow once and continue"); b.onclick = async () => { b.disabled = true; await sendPrompt({ text: t("Permission granted, continue where you left off."), allowOnce: att.specs }, a); c.remove(); }; act.append(b); }
@@ -2491,7 +2530,7 @@ async function openHistory(btn) {
   pop.innerHTML = `<div class="h-head"><b>${t("Past conversations")}</b><button type="button" class="btn primary sm" id="h-new">${t("New conversation")}</button></div>` +
     (convs.length ? convs.map((c) => `<div class="h-item${c.active ? " on" : ""}" data-id="${c.id}" role="menuitem" tabindex="0"><span class="h-title"></span><span class="h-time">${ago(c.updatedAt)}</span><button type="button" class="h-del" title="${t("Delete")}" aria-label="${t("Delete")}"><svg viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.5 8.5h6l.5-8.5"/></svg></button></div>`).join("") : `<p class="h-empty">${t("No conversations yet.")}</p>`);
   pop.querySelectorAll(".h-item").forEach((el, k) => {
-    el.querySelector(".h-title").textContent = convs[k].title || t("Untitled conversation");
+    el.querySelector(".h-title").textContent = el.querySelector(".h-title").title = convs[k].title || t("Untitled conversation");
     const go = async () => {
       closePops(); if (convs[k].active) return;
       try { await api(`/api/agents/${a.id}/convs/${convs[k].id}/activate`, { method: "POST" }); await refresh(); }

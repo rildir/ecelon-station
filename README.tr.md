@@ -88,6 +88,18 @@ Dokümanın her paragrafı, madde işareti, tablo satırı, başlığı ve görs
 - Ecelon Station kendisi hiçbir şey push etmez, yüklemez, yayımlamaz. Varsayılan izin modlarında Claude Code, `git push` gibi komutlardan önce sana sorar; sohbetteki izin kartından yanıtlarsın.
 - "Tam yetki" modu ajanın sormadan komut çalıştırmasına izin verir; yalnızca güvendiğin projelerde aç.
 
+## Masaüstü uygulaması (Windows)
+
+Aynı istasyon, kendi penceresinde: görev çubuğunda kendi ikonu, tarayıcı menüsü ve geliştirici araçları yok, pencere
+kapanınca ajanların çalışmaya devam etmesini sağlayan bir tepsi simgesi var. Kurulum dosyasını ya da taşınabilir exe'yi
+[Releases](https://github.com/rildir/ecelon-station/releases) sayfasından indir, ya da klonladığın klasörde
+`npm run desktop` ile çalıştır.
+
+Exe henüz kod imzalı değil; Windows SmartScreen ilk açılışta uyarır ("Ek bilgi" → "Yine de çalıştır"). Kurulu uygulama
+verisini `%APPDATA%\Ecelon Station\data` klasöründe tutar; başka klasör için `ECELON_DATA` değişkenini ayarla.
+Masaüstü uygulamasında sesle yazma yok. WebGL olmayan ortamlarda (bazı uzak masaüstü ve sanal makineler) istasyon
+yalnızca kurumsal görünümle çalışır.
+
 ## Gereksinimler
 
 - Node.js 20+ ve WebGL destekli güncel bir tarayıcı (Chrome, Edge, Firefox, Safari).

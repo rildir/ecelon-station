@@ -1,7 +1,7 @@
 {
   "name": "Ecelon Station",
   "short_name": "Ecelon",
-  "start_url": "/",
+  "start_url": "/?app=1",
   "display": "standalone",
   "background_color": "#10131f",
   "theme_color": "#000000",
