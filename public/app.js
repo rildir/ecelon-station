@@ -780,19 +780,46 @@ function applyView() {
 }
 $("#btn-view").onclick = () => { proView = !proView; lsSet(VIEW_KEY, proView ? "pro" : "office"); applyView(); };
 
+// ================= the server is older than its files =================
+// The server keeps running when the window is closed, so after an update the page can be newer than the process
+// behind it (missing features, half-translated texts). Say so, and restart it from here.
+function staleBar(kind) {
+  let bar = $("#stale-bar"); if (!bar) { bar = document.createElement("div"); bar.id = "stale-bar"; bar.setAttribute("role", "alert"); document.body.append(bar); }
+  if (kind === "old") { bar.innerHTML = `<b>${escHtml(t("The server is still running an older version."))}</b><span>${escHtml(t("Closing the window does not stop it. End node.exe in Task Manager (on macOS/Linux: stop the node process), then open Ecelon Station again."))}</span>`; return; }
+  bar.innerHTML = `<b>${escHtml(t("The server files were updated."))}</b><span>${escHtml(t("The server has to restart to run the new version."))}</span><button type="button" class="btn sm primary">${escHtml(t("Restart the server"))}</button>`;
+  bar.querySelector("button").onclick = async (e) => {
+    const btn = e.currentTarget, was = meta.build; btn.disabled = true;
+    try { await api("/api/restart", { method: "POST", body: {} }); }
+    catch (err) { btn.disabled = false; toast(err.message, "bad"); return; }
+    btn.textContent = t("Restarting…");
+    for (let i = 0; i < 80; i++) { await pause(500); try { const m = await fetch("/api/meta").then((r) => r.json()); if (m.build && m.build !== was) { location.reload(); return; } } catch {} }
+    btn.disabled = false; btn.textContent = t("Restart the server"); toast(t("The server did not come back. Open Ecelon Station again from its shortcut."), "bad");
+  };
+}
+
 // ================= free chats =================
 // One assistant, no project and no team: for a question, a draft, a file to look at. Listed apart from the
 // projects, newest first, named after the first message. "Turn into a project" gives it a folder and a team.
-function chatRowsHtml() {
-  const list = chatList(), sel = selectedId;
-  return list.map((a) => {
-    const busy = isBusy(a), wait = a.attention && !busy, when = a.lastUsedAt || a.createdAt;
-    return `<button type="button" class="ch-row${a.id === sel ? " sel" : ""}${busy ? " busy" : wait ? " wait" : ""}" data-chat="${escHtml(a.id)}"><b>${escHtml(a.name)}</b><span>${escHtml(busy ? (actText.get(a.id) || t("Working…")) : wait ? t("Waiting for you") : when ? notifTime(new Date(when).getTime()) : "")}</span></button>`;
-  }).join("");
+let ccImported = 0; // conversations an earlier version copied from Claude Code sessions into projects
+async function refreshCcSessions() {
+  try { ccImported = (await api("/api/cc-sessions/imported")).length; } catch { ccImported = 0; }
+  renderChats();
 }
+// Chats are the ones started here, newest first; they live in the station and nowhere else.
 function renderChats() {
+  const sel = selectedId, rows = [];
+  for (const a of chatList()) {
+    const busy = isBusy(a), wait = a.attention && !busy, when = new Date(a.lastUsedAt || a.createdAt || 0).getTime();
+    const sub = busy ? (actText.get(a.id) || t("Working…")) : wait ? t("Waiting for you") : (when ? notifTime(when) : "");
+    rows.push({ at: busy || wait ? Infinity : when, html: `<div class="ch-row${a.id === sel ? " sel" : ""}${busy ? " busy" : wait ? " wait" : ""}"><button type="button" class="ch-open" data-chat="${escHtml(a.id)}"><b>${escHtml(a.name)}</b><span>${escHtml(sub)}</span></button>` +
+      `<button type="button" class="ch-act" data-chat-ren="${escHtml(a.id)}" title="${escHtml(t("Rename"))}" aria-label="${escHtml(t("Rename {name}", { name: a.name }))}">${ICON.edit}</button>` +
+      `<button type="button" class="ch-act del" data-chat-del="${escHtml(a.id)}" title="${escHtml(t("Delete chat"))}" aria-label="${escHtml(t("Delete {name}", { name: a.name }))}">${ICON.trash}</button></div>` });
+  }
+  rows.sort((p, q) => q.at - p.at);
   const html = `<header class="ch-head"><h2>${escHtml(t("Chats"))}</h2><button type="button" class="ch-new" data-chat-new>${escHtml(t("New chat"))}</button></header>` +
-    (chatList().length ? `<div class="ch-rows">${chatRowsHtml()}</div>` : `<p class="ch-empty">${escHtml(t("A chat is one assistant without a project: ask something, draft something, drop a file in. You can turn it into a project later."))}</p>`);
+    `<p class="ch-note">${escHtml(t("One assistant, no project and no team. A chat started here stays here."))}</p>` +
+    (rows.length ? `<div class="ch-rows">${rows.slice(0, 40).map((r) => r.html).join("")}</div>` : `<p class="ch-empty">${escHtml(t("No chats yet. Start one with New chat."))}</p>`) +
+    (ccImported ? `<button type="button" class="ch-undo" data-cc-undo>${escHtml(t("Take back the {n} brought in", { n: ccImported }))}</button>` : "");
   for (const el of document.querySelectorAll("#chat-list, .bd-chats")) setHtml(el, html);
 }
 async function newChat() {
@@ -801,8 +828,29 @@ async function newChat() {
 }
 document.addEventListener("click", (e) => {
   if (e.target.closest("[data-chat-new]")) { newChat(); return; }
-  const row = e.target.closest("[data-chat]"); if (row) selectAgent(row.dataset.chat);
+  const ren = e.target.closest("[data-chat-ren]"); if (ren) { renameChat(ren.dataset.chatRen); return; }
+  const del = e.target.closest("[data-chat-del]"); if (del) { deleteChat(del.dataset.chatDel); return; }
+  const row = e.target.closest("[data-chat]"); if (row) { selectAgent(row.dataset.chat); return; }
+  if (e.target.closest("[data-cc-undo]")) undoImports();
 });
+async function renameChat(id) {
+  const a = agents.find((x) => x.id === id); if (!a) return;
+  const name = (await askText(t("Rename chat"), t("Chat name"), a.name, { ok: t("Save") }))?.trim(); if (!name || name === a.name) return;
+  try { await api(`/api/agents/${a.id}`, { method: "PATCH", body: { name } }); await refresh(); } catch (err) { toast(err.message, "bad"); }
+}
+// A chat has no folder of the user's behind it, so deleting it is final: say so, then remove it with its transcript.
+async function deleteChat(id) {
+  const a = agents.find((x) => x.id === id); if (!a) return;
+  if (!(await confirmBox({ title: t("Delete {name}?", { name: a.name }), body: t("The chat and everything written in it are deleted. This cannot be undone."), ok: t("Delete chat"), danger: true }))) return;
+  try { await api(`/api/agents/${a.id}`, { method: "DELETE" }); } catch (err) { toast(err.message, "bad"); return; }
+  if (selectedId === a.id) closePanel();
+  await refresh(); toast(t("{name} deleted", { name: a.name }));
+}
+async function undoImports() {
+  if (!(await confirmBox({ title: t("Take back what was brought in?"), body: t("{n} {n|conversation|conversations} made from Claude Code sessions will be removed from their projects here. The sessions themselves stay in Claude Code, untouched, and each project goes back to its previous conversation.", { n: ccImported }), ok: t("Take them back") }))) return;
+  try { const r = await api("/api/cc-sessions/undo", { method: "POST", body: {} }); await refresh(); if (current()) loadChat(); await refreshCcSessions(); toast(r.skipped?.length ? t("{n} taken back; still running, left alone: {names}", { n: r.removed, names: r.skipped.join(", ") }) : t("{n} taken back.", { n: r.removed }), "good"); }
+  catch (err) { toast(err.message, "bad"); }
+}
 $("#btn-attach").onclick = async () => {
   const a = current(); if (!a?.solo) return;
   try {
@@ -1166,6 +1214,7 @@ const permOf = (a) => a.permission || "acceptEdits";
 function fillHeader(a) {
   if (!$("#a-name").isContentEditable) { $("#a-name").textContent = a.name; $("#a-name").title = t("{name} (click to rename)", { name: a.name }); }
   $("#a-path").textContent = shortPath(a.cwd); $("#a-path").title = a.cwd;
+  $("#btn-remove").textContent = a.solo ? t("Delete chat") : t("Remove project from the station");
   $("#a-portrait").style.backgroundImage = portraitUrl(a.char ?? indexOf(a.id));
   $("#model-name").textContent = modelName(a.model);
   $("#effort-name").textContent = effortName(a.effort); $("#effort-btn").title = `${t("Effort: {effort}.", { effort: effortName(a.effort) })} ${EFFORT_DESC[a.effort] || ""}`;
@@ -1575,6 +1624,7 @@ const ICON = {
   copy: `<svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="2"/><path d="M3.5 10.5h-.5A1.5 1.5 0 0 1 1.5 9V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>`,
   check: `<svg viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5"/></svg>`,
   edit: `<svg viewBox="0 0 16 16"><path d="M11 2.5 13.5 5 6 12.5H3.5V10Z"/></svg>`,
+  trash: `<svg viewBox="0 0 16 16"><path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.6 8a1 1 0 0 0 1 .9h4.8a1 1 0 0 0 1-.9l.6-8M6.8 7v4M9.2 7v4"/></svg>`,
   redo: `<svg viewBox="0 0 16 16"><path d="M13 3v4H9"/><path d="M13 7a5.5 5.5 0 1 0-1.4 4.7"/></svg>`,
 };
 function actions(d, list) {
@@ -2178,6 +2228,7 @@ function connectWS() {
   ws.onmessage = (m) => {
     let ev; try { ev = JSON.parse(m.data); } catch { return; }
     if (ev.type === "reload") { location.reload(); return; }
+    if (ev.type === "server_stale") { staleBar("stale"); return; }
     if (ev.type === "agents_changed") { refresh(); gitSoon(); return; }
     if (ev.type === "usage") { usage = ev.usage || {}; renderUsage(); return; }
     if (ev.type === "library") { lib.load().catch(() => {}); return; }
@@ -2470,7 +2521,7 @@ async function removeProject(a) {
   if (current() && teamKey(current()) === teamKey(a)) closePanel();
   await refresh(); toast(t("{name} removed", { name: a.name }));
 }
-$("#btn-remove").onclick = () => { closePops(); if (current()) removeProject(leadOf(current())); };
+$("#btn-remove").onclick = () => { closePops(); const a = current(); if (!a) return; if (a.solo) deleteChat(a.id); else removeProject(leadOf(a)); };
 $("#btn-remove-role").onclick = async () => {
   closePops();
   const a = current(); const rest = teamOf(a).filter((m) => m.id !== a.id);
@@ -2653,6 +2704,7 @@ $("#bc-form").addEventListener("submit", async (e) => {
 
 // ================= startup =================
 meta = await api("/api/meta");
+if (!meta.build) staleBar("old"); else if (meta.stale) staleBar("stale");
 usage = await api("/api/usage").catch(() => ({})); renderUsage();
 $("#mode-badge").textContent = meta.mock ? t("Demo mode") : "";
 document.body.style.setProperty("--l-new", JSON.stringify(t("new")));
@@ -2660,7 +2712,7 @@ if (meta.claudeMissing) { const w = $("#cli-warn"); w.textContent = meta.claudeM
 await refresh();
 lib.load().catch(() => {});
 refreshGitSummary(); refreshOverview(); refreshPayroll();
-setTimeout(offerTour, 1500);
+setTimeout(offerTour, 1500); refreshCcSessions(); setInterval(refreshCcSessions, 180000);
 applyView();
 connectWS();
 const q = new URLSearchParams(location.search).get("agent");

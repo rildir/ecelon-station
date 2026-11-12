@@ -7,6 +7,7 @@ import path from "node:path";
 import os from "node:os";
 import { WebSocketServer } from "ws";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import * as cp from "./checkpoint.js";
 import * as reqs from "./requirements.js";
@@ -15,7 +16,7 @@ import * as cov from "./coverage.js";
 import * as tasks from "./tasks.js";
 import * as fsx from "./files.js";
 import * as runs from "./runs.js";
-import { listAgents, getAgent, addAgent, addMember, teamOf, ensureFullTeams, updateAgent, attachChat, removeAgent, reorderAgents, MODELS, EFFORTS, PERMISSIONS } from "./agents.js";
+import { listAgents, getAgent, addAgent, addMember, teamOf, ensureFullTeams, updateAgent, attachChat, dropSessionChats, removeAgent, reorderAgents, MODELS, EFFORTS, PERMISSIONS } from "./agents.js";
 import { ROLES, roleOf, publicRoles } from "./roles.js";
 import { runClaude, resolveClaude, claudeMissingHint, uploadsDir, oneShot, claudeVersion, cliInfo } from "./runner.js";
 import { runMock } from "./mockRunner.js";
@@ -169,7 +170,24 @@ function setStatus(agentId, s, extra = {}) {
 // ---------- REST ----------
 app.use("/api/library", libraryRouter({ broadcast: (m) => { broadcast(m); if (m?.type === "library") syncAllCoverage(); } }));
 
-app.get("/api/meta", (_req, res) => res.json({ mock: MOCK, demo: MOCK && process.env.ECELON_DEMO === "1", models: MODELS, efforts: EFFORTS, permissions: PERMISSIONS, platform: process.platform, roles: publicRoles(), cli: MOCK ? null : cliInfo(), claudeMissing: MOCK ? null : (resolveClaude() ? null : claudeMissingHint()), lang: getLang(), langs: LANGS }));
+// The server is one long-lived process: closing the window does not stop it, and reopening the shortcut finds it
+// running and leaves it alone. After an update the page is new and the process is old. So the server knows when its
+// own files changed on disk since it started, says so (meta.stale, the "server_stale" event), and can restart itself.
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+function codeStamp() { try { return fs.readdirSync(SERVER_DIR).filter((n) => n.endsWith(".js")).sort().map((n) => { const st = fs.statSync(path.join(SERVER_DIR, n)); return `${n}:${st.size}:${Math.round(st.mtimeMs)}`; }).join("|"); } catch { return ""; } }
+const BOOT_STAMP = codeStamp(), BOOT_AT = Date.now();
+const isStale = () => codeStamp() !== BOOT_STAMP;
+app.post("/api/restart", (req, res) => {
+  if (running.size && !req.body?.force) return res.status(409).json({ error: t("Agents are working. Wait for them to finish, or stop them, before restarting the server."), running: running.size });
+  res.json({ ok: true });
+  setTimeout(() => {
+    try { const child = spawn(process.execPath, process.argv.slice(1), { cwd: process.cwd(), env: { ...process.env, ECELON_RESTART: "1" }, detached: true, stdio: "ignore", windowsHide: true }); child.unref(); }
+    catch (e) { console.error("[ecelon] restart failed:", e.message); return; }
+    try { for (const c of wss.clients) c.terminate(); server.close(); } catch {}
+    setTimeout(() => process.exit(0), 150);
+  }, 120);
+});
+app.get("/api/meta", (_req, res) => res.json({ build: BOOT_AT, stale: isStale(), mock: MOCK, demo: MOCK && process.env.ECELON_DEMO === "1", models: MODELS, efforts: EFFORTS, permissions: PERMISSIONS, platform: process.platform, roles: publicRoles(), cli: MOCK ? null : cliInfo(), claudeMissing: MOCK ? null : (resolveClaude() ? null : claudeMissingHint()), lang: getLang(), langs: LANGS }));
 
 // ---------- usage limits (from Claude Code's rate_limit_event) ----------
 const USAGE_FILE = dataPath("usage.json");
@@ -405,6 +423,13 @@ app.delete("/api/agents/:id", (req, res) => {
     const gone = removeAgent(req.params.id, { whole });
     for (const g of gone) audit({ ...auditBy(g), who: t("User"), role: "user", kind: "project", what: t("Removed: {name}", { name: g.name + " · " + ROLES[roleOf(g)].label }), extra: g.cwd });
     for (const g of gone) { running.get(g.id)?.kill(); forgetAgent(g.id); }
+    // a free chat has nothing outside the station: its transcript and its scratch folder go with it. A project's
+    // folder is the user's and is never touched; the scratch folder is removed only when it really is one of ours.
+    for (const g of gone) if (g.solo) {
+      try { fs.rmSync(path.join(LOG_DIR, g.id), { recursive: true, force: true }); } catch {}
+      const home = dataPath("chats") + path.sep, dir = path.resolve(String(g.cwd || ""));
+      if (dir.startsWith(home) && path.dirname(dir) + path.sep === home) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} }
+    }
     const removed = gone;
     broadcast({ type: "agents_changed" });
     res.json(removed);
@@ -431,6 +456,36 @@ app.post("/api/agents/:id/convs", (req, res) => {
   if (!getAgent(req.params.id)) return res.status(404).json({ error: t("Agent not found") });
   if (running.has(req.params.id)) return res.status(409).json({ error: t("A new conversation cannot be opened while the agent is running; stop it first.") });
   const a = startNewConv(req.params.id); broadcast({ type: "agents_changed" }); res.json({ activeConv: a.activeConv });
+});
+// Taking back what was brought in: the conversations made from Claude Code sessions are removed from the station
+// (the sessions themselves, under ~/.claude, were never touched and stay). A conversation counts as brought in when
+// it is marked so, or — for the ones made before the mark existed — when its log opens with the import note.
+function importedConvs() {
+  const out = [];
+  for (const a of listAgents()) { if (a.solo) continue; for (const c of a.convs || []) {
+    let yes = !!c.imported;
+    if (!yes && c.sessionId) { try { const first = tailless(logFile(a.id, c.id)); yes = first.type === "note" && (first.ccImport || /Claude Code/.test(String(first.text || ""))); } catch {} }
+    if (yes) out.push({ agentId: a.id, convId: c.id, project: a.name, title: c.title || "" });
+  } }
+  return out;
+}
+function tailless(file) { const fd = fs.openSync(file, "r"); try { const buf = Buffer.alloc(2048), n = fs.readSync(fd, buf, 0, 2048, 0), line = buf.toString("utf8", 0, n).split("\n")[0]; return JSON.parse(line); } finally { fs.closeSync(fd); } }
+app.get("/api/cc-sessions/imported", (_req, res) => res.json(importedConvs()));
+app.post("/api/cc-sessions/undo", (_req, res) => {
+  const list = importedConvs(); let removed = 0; const skipped = [];
+  for (const x of list) {
+    const a = getAgent(x.agentId); if (!a) continue;
+    if (running.has(a.id) && a.activeConv === x.convId) { skipped.push(x.project); continue; }
+    const convs = (a.convs || []).filter((c) => c.id !== x.convId);
+    try { fs.rmSync(logFile(a.id, x.convId), { force: true }); } catch {}
+    if (a.activeConv === x.convId) {
+      const next = [...convs].sort((p, q) => q.updatedAt - p.updatedAt)[0];
+      if (next) updateAgent(a.id, { convs, activeConv: next.id, sessionId: next.sessionId || null, context: next.context || null });
+      else { const id = newConvId(), now = Date.now(); updateAgent(a.id, { convs: [{ id, sessionId: null, title: "", createdAt: now, updatedAt: now, context: null }], activeConv: id, sessionId: null, context: null }); }
+    } else updateAgent(a.id, { convs });
+    removed++;
+  }
+  broadcast({ type: "agents_changed" }); res.json({ removed, skipped });
 });
 app.post("/api/agents/:id/convs/:cid/activate", (req, res) => {
   const a = getAgent(req.params.id); if (!a) return res.status(404).json({ error: t("Agent not found") });
@@ -1531,6 +1586,10 @@ try {
   if (process.env.ECELON_DEV === "1") fs.watch(PUBLIC, { recursive: true }, () => { clearTimeout(tm); tm = setTimeout(() => broadcast({ type: "reload" }), 250); });
 } catch {}
 
+// An earlier version listed Claude Code sessions under Chats and opened them as chats. Chats are now only the ones
+// started here, so what is left of those is dropped: the entry and its copy of the transcript. The session itself
+// (under ~/.claude) and its folder were never the station's and are not touched.
+{ const gone = dropSessionChats(); for (const g of gone) { try { fs.rmSync(path.join(LOG_DIR, g.id), { recursive: true, force: true }); } catch {} forgetAgent(g.id); } if (gone.length) console.log(`Session chats removed: ${gone.length}`); }
 { const n = ensureFullTeams(); if (n) console.log(`Teams completed: ${n} roles added`); }
 // agents that were working when the station last stopped: say so in their chat
 try {
@@ -1544,13 +1603,17 @@ try {
   fs.writeFileSync(RUNNING_FILE, "[]");
 } catch {}
 if (MOCK && process.env.ECELON_DEMO === "1") await seedDemo().catch((e) => console.error("[demo] seed failed:", e.message));
+let listenTries = 0;
 const onListenError = (e) => {
+  // a restart: the old process is still letting go of the port
+  if (e.code === "EADDRINUSE" && process.env.ECELON_RESTART === "1" && listenTries++ < 40) { setTimeout(() => server.listen(PORT, "127.0.0.1"), 250); return; }
   if (e.code === "EADDRINUSE") console.error(`Port ${PORT} is already in use (is Ecelon Station already running?). Try another one: ecelon-station --port ${PORT + 1}`);
   else if (e.code === "EACCES") console.error(`No permission to listen on port ${PORT}. Try: ecelon-station --port 4777`);
   else console.error("The server could not start:", e.message);
   process.exit(1);
 };
 server.on("error", onListenError); wss.on("error", onListenError); // ws re-emits the server's errors on wss and throws if nobody listens
+{ let told = false; setInterval(() => { if (!told && isStale()) { told = true; broadcast({ type: "server_stale" }); } }, 15000).unref(); }
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Ecelon Station → http://127.0.0.1:${PORT}  (${MOCK ? "MOCK mode" : "claude -p"})`);
   if (!MOCK) {

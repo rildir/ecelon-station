@@ -75,7 +75,7 @@ export function getAgent(id) {
 
 export function addAgent({ name, cwd, model = "claude-sonnet-5-5", effort = "medium", permission = "acceptEdits", solo = false }) {
   const list = load();
-  if (list.some((a) => a.cwd === cwd)) throw new Error(t("There is already a project for this folder. To add a role to the team, open the project and use the + Role button."));
+  if (!solo && list.some((a) => !a.solo && a.cwd === cwd)) throw new Error(t("There is already a project for this folder. To add a role to the team, open the project and use the + Role button."));
   if (!validModel(model)) throw new Error(t("Invalid model name."));
   if (!EFFORTS.includes(effort)) throw new Error(t("Invalid effort."));
   if (!PERMISSIONS.includes(permission)) throw new Error(t("Invalid permission mode."));
@@ -200,9 +200,17 @@ export function attachChat(id, cwd) {
   const a = list.find((x) => x.id === id);
   if (!a) throw new Error(t("Agent not found."));
   if (!a.solo) throw new Error(t("This is already a project."));
-  if (list.some((x) => x.cwd === cwd)) throw new Error(t("There is already a project for this folder. To add a role to the team, open the project and use the + Role button."));
+  if (list.some((x) => !x.solo && x.cwd === cwd)) throw new Error(t("There is already a project for this folder. To add a role to the team, open the project and use the + Role button."));
   a.cwd = cwd; a.name = path.basename(cwd) || a.name; delete a.solo; a.sessionId = null;
   for (const c of a.convs || []) c.sessionId = null;
   save(list);
   return a;
+}
+
+// Chats that an earlier version made out of Claude Code sessions (marked `cc`). They are no longer a thing; this
+// removes the entries and says which went, so the caller can clear their logs.
+export function dropSessionChats() {
+  const list = load(), gone = list.filter((x) => x.cc);
+  if (gone.length) save(list.filter((x) => !x.cc));
+  return gone;
 }

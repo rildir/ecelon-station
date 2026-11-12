@@ -17,7 +17,14 @@ export function setLang(l) {
   }
 }
 export const getLang = () => lang;
-export const getDict = () => dict;
+// The dictionary is read again when its file changes, so an update never shows half of the interface in English.
+let dictAt = 0, dictChecked = 0;
+export function getDict() {
+  if (lang === "en" || Date.now() - dictChecked < 2000) return dict;
+  dictChecked = Date.now();
+  try { const m = fs.statSync(path.join(PUBLIC, "i18n", `${lang}.json`)).mtimeMs; if (m !== dictAt) { const first = !dictAt; dictAt = m; if (!first) setLang(lang); } } catch {}
+  return dict;
+}
 /** BCP-47 tag for toLocale*() calls. */
 export const locale = () => (lang === "tr" ? "tr-TR" : "en-US");
 /** Name of the language for prompts ("Turkish"), so agents answer the user in their language. */
