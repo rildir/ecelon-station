@@ -28,7 +28,7 @@ npm install
 npm run demo
 ```
 
-It opens `http://127.0.0.1:4777`. Click a room, send a message, then open **Scope** and press **Extract from document → Compare with code → Verify with the tester**.
+It opens `http://127.0.0.1:4777` and offers to **play the whole loop by itself**: the analyst turns the sample document into requirements, checks them against the code, a different agent verifies with evidence, and the one item the document calls "done" without proof ends up as a mismatch. About a minute; you only watch. (Or do it by hand: open **Scope** and press **Extract from document → Compare with code → Verify with the tester**.)
 
 To drive real agents, install [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude --version` must work) and run `npm start` instead of `npm run demo`, then **Add project**.
 
@@ -60,6 +60,8 @@ Link an analysis document (Markdown, Word, Excel, PDF with MarkItDown) to a proj
 
 Where the document says *done* but nothing verifies it, you get a **mismatch** banner instead of a green tick.
 
+**Proof report.** One click in Scope turns all of that into a single self-contained page for somebody who was not in the room — a manager, a customer, an auditor: for every requirement, what the document says → the lines in the code → how it was verified, by whom and when → what it cost. The evidence is re-checked when the report is made (if the code changed since, the item is *not* shown as verified), and the page is stamped with the branch and commit. No scripts, no external files; print it or mail it.
+
 <p align="center"><img src="docs/media/scope.png" alt="Requirements screen with a mismatch warning" width="860"></p>
 
 ### Document coverage — nothing slips through
@@ -68,6 +70,8 @@ Every paragraph, list item, table row, heading and image of the document is trac
 <p align="center"><img src="docs/media/coverage.png" alt="Document coverage screen" width="860"></p>
 
 ### The rest
+- **Two faces:** the 3D office, or a sober professional view (a roster of projects, roles, evidence and cost — no scene, no characters, no sound) for when the office is not the right thing to have on screen. One click switches.
+- **Audit trail:** every command run, file written and permission granted (and by whom) goes into an append-only, hash-chained log you can filter, check and export as CSV.
 - **Safe by default:** a git checkpoint before and after every task (your branch and index are never touched). See a "3 files changed" card with diffs in the chat; undo with one click.
 - **Real chat UI:** model / effort / permission mode, thinking stream, tool details, todo list, plan approval, permission cards, `@file` suggestions, message queue, image attachments, voice input, usage and context meters.
 - **Document library:** PDF, Word, Excel, Markdown, CSV; search inside documents; automatic version history; deletes are undoable for 7 days. Attach with `#` in the chat.

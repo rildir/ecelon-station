@@ -73,7 +73,7 @@ export function getAgent(id) {
   return load().find((a) => a.id === id) || null;
 }
 
-export function addAgent({ name, cwd, model = "claude-sonnet-5-5", effort = "medium", permission = "acceptEdits" }) {
+export function addAgent({ name, cwd, model = "claude-sonnet-5-5", effort = "medium", permission = "acceptEdits", solo = false }) {
   const list = load();
   if (list.some((a) => a.cwd === cwd)) throw new Error(t("There is already a project for this folder. To add a role to the team, open the project and use the + Role button."));
   if (!validModel(model)) throw new Error(t("Invalid model name."));
@@ -89,6 +89,7 @@ export function addAgent({ name, cwd, model = "claude-sonnet-5-5", effort = "med
     permission,
     char: freeChar(list),
     sessionId: null,          // the session id Claude Code gives after the first conversation
+    ...(solo ? { solo: true } : {}), // a free chat: one assistant, no team, its own scratch folder (see /api/chats)
     createdAt: new Date().toISOString(),
     lastUsedAt: null,
     totalCostUsd: 0,
@@ -107,6 +108,7 @@ export function ensureFullTeams() {
   let added = 0;
   for (const members of teams.values()) {
     const lead = members.find((m) => roleOf(m) === "dev") || members[0];
+    if (lead.solo) continue; // a free chat has no team
     for (const role of Object.keys(ROLES)) if (!members.some((m) => roleOf(m) === role)) { try { addMember(lead.id, role); added++; } catch {} }
   }
   return added;
@@ -189,4 +191,18 @@ export function reorderAgents(ids) {
 
 export function resetSession(id) {
   return updateAgent(id, { sessionId: null });
+}
+
+// A free chat becomes a project: it takes the folder, gets the project's name and (through ensureFullTeams) a team.
+// The Claude Code session belongs to the old folder, so a new one starts; what was said stays in the log.
+export function attachChat(id, cwd) {
+  const list = load();
+  const a = list.find((x) => x.id === id);
+  if (!a) throw new Error(t("Agent not found."));
+  if (!a.solo) throw new Error(t("This is already a project."));
+  if (list.some((x) => x.cwd === cwd)) throw new Error(t("There is already a project for this folder. To add a role to the team, open the project and use the + Role button."));
+  a.cwd = cwd; a.name = path.basename(cwd) || a.name; delete a.solo; a.sessionId = null;
+  for (const c of a.convs || []) c.sessionId = null;
+  save(list);
+  return a;
 }
