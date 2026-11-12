@@ -137,7 +137,8 @@ const roleLabel = (a) => meta.roles?.[roleOf(a)]?.label || t("Developer");
 const teamKey = (a) => a.team || a.id;
 const teamOf = (a) => agents.filter((x) => teamKey(x) === teamKey(a)).sort((x, y) => (meta.roles?.[roleOf(x)]?.order ?? 9) - (meta.roles?.[roleOf(y)]?.order ?? 9));
 const agentLabel = (a) => (teamOf(a).length > 1 ? `${a.name} · ${roleLabel(a)}` : a.name);
-const teamOrder = () => [...new Set(agents.map(teamKey))];
+const teamOrder = () => [...new Set(agents.filter((a) => !a.solo).map(teamKey))]; // projects only; free chats are listed apart (chatList)
+const chatList = () => agents.filter((a) => a.solo).sort((a, b) => String(b.lastUsedAt || b.createdAt || "").localeCompare(String(a.lastUsedAt || a.createdAt || "")));
 const leadOf = (a) => { const t = teamOf(a); return t.find((x) => roleOf(x) === "dev") || t[0]; };
 const projects = () => teamOrder().map((t) => leadOf(agents.find((x) => teamKey(x) === t)));
 // Turkish case suffixes for names in sentences (dative "Testçi'ye", ablative "Analist'ten"); other languages return the word as is
@@ -191,6 +192,11 @@ const station = createStation($("#scene"), {
   },
 });
 window.__station = station; window.__pick = (id) => selectAgent(id); // for debugging
+// Two faces of the same station: the office (3D) and the professional view (a roster, nothing playful). The choice
+// is per browser. In the professional view the 3D scene does not run at all.
+const VIEW_KEY = "ecelon.view";
+let proView = (new URLSearchParams(location.search).get("view") || lsGet(VIEW_KEY, "office")) === "pro";
+{ const rawPause = station.pause.bind(station); let want = false; station.pause = (on) => { want = !!on; rawPause(want || proView); }; station.pauseSync = () => rawPause(want || proView); }
 
 // ================= document library =================
 const lib = createLibrary({
@@ -355,6 +361,7 @@ function payrollBoard(tk) {
   return { title: t("PAYROLL · THIS WEEK"), total: p.totalUsd ? money(p.totalUsd) : "", rows, empty: t("Nothing spent this week") };
 }
 function pushOffice() {
+  if (proView) renderBoard();
   for (const tk of teamOrder()) {
     const gs = gitSum[tk], ov = overview[tk] || {};
     station.setOffice(tk, { changed: gs?.ok ? gs.changed : 0, ahead: gs?.ok ? gs.ahead : 0, health: healthOf(tk), tasks: ov.tasks || null, report: !!ov.tasks?.doneSince, wear: Math.round(wearOf(tk) * 20) / 20, payroll: payrollBoard(tk), stack: ov.stack || [] });
@@ -606,7 +613,7 @@ function stopClip() { if (!live?.rec) return; clearTimeout(live.recTimer); try {
   document.addEventListener("keydown", (e) => { if (live && e.key === "Escape" && !document.querySelector("dialog[open]")) { e.preventDefault(); stopLive(); } });
   // screensaver: left alone for a few minutes, the station goes on air by itself and comes back at the first touch
   const IDLE_MS = (Number(new URLSearchParams(location.search).get("idle")) || 240) * 1000; let idleT = 0, idleAt = performance.now(); // ?idle=10 to try it
-  const canAuto = () => !live && !selectedId && !replay && !standup && !document.querySelector("dialog[open]") && !document.body.classList.contains("focus") && document.visibilityState === "visible";
+  const canAuto = () => !proView && !live && !selectedId && !replay && !standup && !document.querySelector("dialog[open]") && !document.body.classList.contains("focus") && document.visibilityState === "visible";
   const armIdle = () => { clearTimeout(idleT); idleT = setTimeout(() => { if (canAuto()) startLive(true); else armIdle(); }, IDLE_MS); };
   const touched = () => { const now = performance.now(); if (live?.auto && now - idleAt > 1200) stopLive(); idleAt = now; armIdle(); };
   for (const ev of ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"]) window.addEventListener(ev, touched, { passive: true, capture: true });
@@ -640,6 +647,253 @@ async function openPayroll(tk) {
   d.showModal();
 }
 $("#py-close").onclick = () => $("#dlg-payroll").close();
+
+// ================= professional view =================
+let boardRaf = 0;
+function renderBoard() { if (proView && !boardRaf) boardRaf = requestAnimationFrame(() => { boardRaf = 0; renderBoardNow(); }); }
+// a role's mark on the roster: its initial, or two letters when two roles of the team share one (Geliştirici / Gözden geçirici)
+function monoOf(a, team) {
+  const first = (x) => String(roleLabel(x) || "?").trim().charAt(0).toLocaleUpperCase(locale()), l = String(roleLabel(a) || "?").trim();
+  return team.filter((x) => first(x) === first(a)).length > 1 ? first(a) + l.charAt(1).toLocaleLowerCase(locale()) : first(a);
+}
+const ROLE_ORDER = ["dev", "analyst", "tester", "reviewer"];
+const setHtml = (el, html) => { if (el.__h !== html) { el.__h = html; el.innerHTML = html; } }; // touch the page only when something changed: no flicker, clicks never land on a node that is being replaced
+const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+let boardShape = "";
+const hoursText = (ms) => { const h = ms / 3600000; return h >= 10 ? String(Math.round(h)) : h.toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }); };
+// what the week looked like in work, not in money: on a subscription the dollar figure is only "what the API would
+// have charged", and it reads like a bill
+const weekText = (p) => { const runs = (p?.members || []).reduce((n, m) => n + m.runs, 0), ms = (p?.members || []).reduce((n, m) => n + m.durationMs, 0); return !runs ? "–" : ms < 360000 ? t("{n} {n|run|runs}", { n: runs }) : t("{n} {n|run|runs} · {h} h", { n: runs, h: hoursText(ms) }); };
+// The roster has two layouts: the list (to work in) and the mosaic (to see the whole at a glance).
+const BOARD_KEY = "ecelon.board";
+let boardMode = lsGet(BOARD_KEY, "list") === "map" ? "map" : "list";
+// The mosaic: every project is a block, and the block fills from the bottom with what has been proven. Solid is
+// verified with evidence, hatched is what the document calls done without proof, empty is what is left. The bigger
+// the scope, the bigger the block. Linked projects are laid next to each other.
+let mosaicSig = "", mosaicSeen = false;
+function renderMosaic(el, teams) {
+  const box = el.querySelector(".bd-map"); if (!box) return;
+  const selTk = current() ? teamKey(current()) : "", at = new Map(teams.map((x) => [x.tk, x]));
+  // linked projects walk together, so they end up side by side
+  const order = [], seen = new Set(), leadOfT = (x) => x.team.find((a) => roleOf(a) === "dev") || x.team[0];
+  const walk = (x) => { const q = [x]; seen.add(x.tk); while (q.length) { const c = q.shift(); order.push(c); for (const k of leadOfT(c).links || []) { const d = at.get(k); if (d && !seen.has(k)) { seen.add(k); q.push(d); } } } };
+  for (const x of teams) if (!seen.has(x.tk)) walk(x);
+  const maxTotal = Math.max(1, ...order.map((x) => overview[x.tk]?.reqs?.total || 0));
+  const tiles = order.map((x) => {
+    const lead = leadOfT(x), r = overview[x.tk]?.reqs, total = r?.total || 0, done = r?.done || 0, claimed = Math.min(total - done, r?.mismatches || 0);
+    const busy = x.team.filter(isBusy), wait = x.team.find((a) => (a.attention || a.status === "error") && !isBusy(a));
+    const size = total && (total === maxTotal || total >= maxTotal * 0.5) ? "l" : total ? "m" : "s";
+    const pips = x.team.map((a) => `<i class="${isBusy(a) ? "busy" : (a.attention || a.status === "error") ? "wait" : a.status === "done" ? "fin" : ""}" title="${escHtml(roleLabel(a))}"></i>`).join("");
+    const state = wait ? (wait.attention?.kind === "permission" ? t("{role} is waiting for your permission", { role: roleLabel(wait) }) : t("{role} needs you", { role: roleLabel(wait) })) : busy.length ? t("{role} is working", { role: busy.map(roleLabel).join(", ") }) : "";
+    const linked = (lead.links || []).map((k) => at.get(k)).filter(Boolean).map((d) => leadOfT(d).name);
+    const week = weekText(payroll.get(x.tk));
+    return { tk: x.tk, id: lead.id, name: lead.name, size, total, done, claimed, pct: total ? Math.round((done / total) * 100) : 0, pips, state, cls: (wait ? " wait" : busy.length ? " busy" : "") + (selTk === x.tk ? " sel" : "") + (total ? "" : " bare"),
+      note: total ? t("{done} of {total} proven", { done, total }) + (r?.mismatches ? ". " + t("{n} said done, not proven", { n: r.mismatches }) : "") : t("No requirements yet"), week: week === "–" ? "" : week, linked: linked.length ? t("Linked with {names}", { names: linked.join(", ") }) : "" };
+  });
+  const sig = JSON.stringify(tiles); if (sig === mosaicSig && box.firstChild) return; mosaicSig = sig;
+  const first = !mosaicSeen; mosaicSeen = true;
+  box.innerHTML = `<div class="mz${first ? " rise" : ""}">${tiles.map((x, i) => `<button type="button" class="mz-t ${x.size}${x.cls}" data-id="${escHtml(x.id)}" style="--i:${i}">
+      <span class="mz-fill" style="--done:${x.total ? (x.done / x.total) * 100 : 0}%;--claimed:${x.total ? (x.claimed / x.total) * 100 : 0}%">${x.claimed ? '<i class="mz-claimed"></i>' : ""}${x.done ? '<i class="mz-done"></i>' : ""}</span>
+      <span class="mz-top"><b class="mz-name">${escHtml(x.name)}</b><span class="mz-pips">${x.pips}</span></span>
+      ${x.state ? `<span class="mz-state">${escHtml(x.state)}</span>` : ""}
+      <span class="mz-foot">${x.total ? `<strong class="mz-pct">${x.pct}<small>%</small></strong>` : ""}<span class="mz-note"><span>${escHtml(x.note)}${x.week && x.size === "l" ? `<br>${escHtml(t("This week: {week}", { week: x.week }))}` : ""}${x.linked && x.size !== "m" ? `<br>${escHtml(x.linked)}` : ""}</span></span></span>
+    </button>`).join("")}</div>
+    <p class="mz-key"><span><i class="k-done"></i>${escHtml(t("proven with evidence"))}</span><span><i class="k-claimed"></i>${escHtml(t("said done, not proven"))}</span><span><i class="k-open"></i>${escHtml(t("not done yet"))}</span></p>`;
+  if (first) requestAnimationFrame(() => requestAnimationFrame(() => box.querySelector(".mz")?.classList.remove("rise")));
+}
+function renderBoardNow() {
+  const el = $("#board"); if (!proView) return;
+  const teams = teamOrder().map((tk) => ({ tk, team: teamOf(agents.find((x) => teamKey(x) === tk)) })).filter((x) => x.team.length);
+  for (const x of teams) { x.team = [...x.team].sort((p, q) => ROLE_ORDER.indexOf(roleOf(p)) - ROLE_ORDER.indexOf(roleOf(q))); x.wait = x.team.some((a) => (a.attention || a.status === "error") && !isBusy(a)); x.live = x.wait || x.team.some((a) => isBusy(a) || a.status === "done"); }
+  teams.sort((a, b) => (a.wait ? 0 : a.live ? 1 : 2) - (b.wait ? 0 : b.live ? 1 : 2)); // waiting for you, then at work, then the rest in your own order
+  const shape = boardMode + "|" + teams.map((x) => x.tk + (x.live ? "+" : "-") + x.team.map((a) => a.id + roleOf(a)).join(",")).join("|") + "|" + (meta.claudeMissing || "");
+  if (shape !== boardShape || !el.firstChild) {
+    boardShape = shape;
+    el.innerHTML = `<header class="bd-head"><div><p class="bd-eyebrow"></p><h1>${escHtml(t("Projects"))}</h1><p class="bd-sub"></p></div><div class="bd-side"><div class="bd-modes" role="group" aria-label="${escHtml(t("Layout"))}"><button type="button" data-mode="list" aria-pressed="${boardMode === "list"}">${escHtml(t("List"))}</button><button type="button" data-mode="map" aria-pressed="${boardMode === "map"}">${escHtml(t("Mosaic"))}</button></div><div class="bd-kpis"></div></div></header>
+      ${meta.claudeMissing ? `<p class="bd-warn" role="alert">${escHtml(meta.claudeMissing)}</p>` : ""}
+      <div class="bd-cols" aria-hidden="true"><span>${escHtml(t("Project"))}</span><span>${escHtml(t("Evidence"))}</span><span>${escHtml(t("Tasks"))}</span><span>${escHtml(t("This week"))}</span><span></span></div>
+      <div class="bd-rows"></div><div class="bd-map"></div><section class="bd-chats chat-list"></section>`;
+    el.classList.toggle("map", boardMode === "map"); mosaicSig = "";
+    const rows = el.querySelector(".bd-rows");
+    if (!teams.length) rows.innerHTML = `<div class="bd-empty"><p>${escHtml(t("No projects yet. Add a project folder to start."))}</p><button type="button" class="btn primary" data-bd="add">${escHtml(t("Add project"))}</button></div>`;
+    for (const { tk, team, live } of teams) {
+      const lead = team.find((x) => roleOf(x) === "dev") || team[0];
+      const row = document.createElement("article"); row.className = "bd-row" + (live ? " live" : ""); row.dataset.tk = tk;
+      row.innerHTML = `<button type="button" class="bd-name" data-id="${escHtml(lead.id)}" title="${escHtml(t("Open the conversation"))}"><b></b><span></span></button>
+        <button type="button" class="bd-ev" data-bd="scope" title="${escHtml(t("Open Scope: requirements and their evidence"))}"></button>
+        <button type="button" class="bd-tasks" data-bd="tasks" title="${escHtml(t("Open the task board"))}"><span><b data-k="todo"></b>${escHtml(t("to do"))}</span><span><b data-k="doing"></b>${escHtml(t("doing"))}</span><span><b data-k="done"></b>${escHtml(t("done"))}</span></button>
+        <div class="bd-week"></div>
+        <button type="button" class="bd-open" data-id="${escHtml(lead.id)}">${escHtml(t("Open"))}<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="bd-team"></div>`;
+      const tm = row.querySelector(".bd-team");
+      for (const a of team) {
+        const c = document.createElement("button"); c.type = "button"; c.dataset.id = a.id; c.className = "bd-m"; c.title = t("Talk to the {role}", { role: roleLabel(a) });
+        c.innerHTML = `<i class="bd-mono"></i><span><b></b><em></em></span>`;
+        c.querySelector(".bd-mono").textContent = monoOf(a, team); c.querySelector("b").textContent = roleLabel(a); tm.append(c);
+      }
+      rows.append(row);
+    }
+  }
+  // the parts that change
+  const busyN = agents.filter(isBusy).length, waitN = teams.filter((x) => x.wait).length;
+  let done = 0, total = 0, open = 0, runs = 0, ms = 0;
+  for (const { tk } of teams) { const ov = overview[tk] || {}; done += ov.reqs?.done || 0; total += ov.reqs?.total || 0; open += (ov.tasks?.todo || 0) + (ov.tasks?.doing || 0); for (const m of payroll.get(tk)?.members || []) { runs += m.runs; ms += m.durationMs; } }
+  const kpi = (v, l) => `<div class="bd-kpi"><b>${escHtml(v)}</b><span>${escHtml(l)}</span></div>`;
+  setText(el.querySelector(".bd-eyebrow"), new Date().toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" }));
+  setHtml(el.querySelector(".bd-sub"), `${escHtml(t("{n} {n|project|projects}", { n: teams.length }))} · ${escHtml(busyN ? t("{n} working", { n: busyN }) : t("nobody is working"))}${waitN ? ` · <strong>${escHtml(t("{n} waiting for you", { n: waitN }))}</strong>` : ""}`);
+  setHtml(el.querySelector(".bd-kpis"), kpi(total ? `${done}/${total}` : "–", t("Verified with evidence")) + kpi(open, t("Open tasks")) + kpi(runs, t("Runs this week")) + kpi(hoursText(ms), t("Agent hours this week")));
+  renderChats();
+  if (boardMode === "map") { renderMosaic(el, teams); return; }
+  const selTk = current() ? teamKey(current()) : "";
+  for (const { tk, team } of teams) {
+    const row = el.querySelector(`.bd-row[data-tk="${CSS.escape(tk)}"]`); if (!row) continue;
+    const lead = team.find((x) => roleOf(x) === "dev") || team[0], ov = overview[tk] || {}, r = ov.reqs, tc = ov.tasks || {}, gs = gitSum[tk];
+    row.classList.toggle("bd-att", team.some((a) => (a.attention || a.status === "error") && !isBusy(a))); row.classList.toggle("sel", selTk === tk);
+    setText(row.querySelector(".bd-name b"), lead.name);
+    setText(row.querySelector(".bd-name span"), [gs?.ok && gs.branch, gs?.ok && gs.changed ? t("{n} changed", { n: gs.changed }) : "", (ov.stack || []).slice(0, 3).join(" · ")].filter(Boolean).join("  ·  ") || lead.cwd || "");
+    const none = r ? Math.max(0, r.total - r.done - (r.failed || 0) - (r.stale || 0)) : 0;
+    setHtml(row.querySelector(".bd-ev"), r?.total ? `<i class="bd-bar"><u class="ok" style="flex:${r.done}"></u><u class="bad" style="flex:${r.failed || 0}"></u><u class="warn" style="flex:${r.stale || 0}"></u><u style="flex:${none}"></u></i><span><b>${r.done}/${r.total}</b> ${escHtml(t("proven"))}${r.mismatches ? ` · <em>${escHtml(t("{n} {n|mismatch|mismatches}", { n: r.mismatches }))}</em>` : ""}</span>` : `<span class="bd-dim">${escHtml(t("No requirements yet"))}</span>`);
+    for (const k of ["todo", "doing", "done"]) setText(row.querySelector(`.bd-tasks [data-k="${k}"]`), String(tc[k] || 0));
+    row.querySelector(".bd-tasks").classList.toggle("zero", !(tc.todo || tc.doing || tc.done));
+    setText(row.querySelector(".bd-week"), weekText(payroll.get(tk)));
+    for (const a of team) {
+      const c = row.querySelector(`.bd-m[data-id="${CSS.escape(a.id)}"]`); if (!c) continue;
+      const busy = isBusy(a), wait = (a.attention || a.status === "error") && !busy;
+      const cls = "bd-m" + (busy ? " busy" : wait ? " wait k-" + (a.attention?.kind || "error") : a.status === "done" ? " fin" : "");
+      if (c.className !== cls) c.className = cls;
+      setText(c.querySelector("em"), busy ? (actText.get(a.id) || t("Working…")) : wait ? (a.attention?.kind === "permission" ? t("Waiting for permission") : a.attention?.kind === "error" || a.status === "error" ? t("Error") : a.attention?.text || t("Waiting for you")) : STATUS_TEXT[a.status] || t("Idle"));
+    }
+  }
+}
+$("#board").addEventListener("click", (e) => {
+  if (e.target.closest("[data-bd='add']")) { $("#btn-add").click(); return; }
+  const md = e.target.closest("[data-mode]"); if (md) { boardMode = md.dataset.mode; lsSet(BOARD_KEY, boardMode); renderBoardNow(); return; }
+  const m = e.target.closest("[data-id]"); if (m) { selectAgent(m.dataset.id); return; }
+  const act = e.target.closest("[data-bd]"); if (!act) return;
+  const tk = act.closest(".bd-row")?.dataset.tk, lead = agents.find((a) => teamKey(a) === tk && roleOf(a) === "dev") || agents.find((a) => teamKey(a) === tk); if (!lead) return;
+  if (act.dataset.bd === "scope") reqsUI.open(lead); else if (act.dataset.bd === "tasks") tasksUI.open(lead);
+});
+function applyView() {
+  document.body.classList.toggle("pro", proView); $("#board").hidden = !proView; sfx.muted = proView; station.pauseSync();
+  const b = $("#btn-view"); b.setAttribute("aria-pressed", String(proView)); b.title = proView ? t("Switch to the office view") : t("Switch to the professional view"); b.setAttribute("aria-label", b.title);
+  if (proView) { if (live) stopLive(); renderBoardNow(); }
+}
+$("#btn-view").onclick = () => { proView = !proView; lsSet(VIEW_KEY, proView ? "pro" : "office"); applyView(); };
+
+// ================= the server is older than its files =================
+// The server keeps running when the window is closed, so after an update the page can be newer than the process
+// behind it (missing features, half-translated texts). Say so, and restart it from here.
+function staleBar(kind) {
+  let bar = $("#stale-bar"); if (!bar) { bar = document.createElement("div"); bar.id = "stale-bar"; bar.setAttribute("role", "alert"); document.body.append(bar); }
+  if (kind === "old") { bar.innerHTML = `<b>${escHtml(t("The server is still running an older version."))}</b><span>${escHtml(t("Closing the window does not stop it. End node.exe in Task Manager (on macOS/Linux: stop the node process), then open Ecelon Station again."))}</span>`; return; }
+  bar.innerHTML = `<b>${escHtml(t("The server files were updated."))}</b><span>${escHtml(t("The server has to restart to run the new version."))}</span><button type="button" class="btn sm primary">${escHtml(t("Restart the server"))}</button>`;
+  bar.querySelector("button").onclick = async (e) => {
+    const btn = e.currentTarget, was = meta.build; btn.disabled = true;
+    try { await api("/api/restart", { method: "POST", body: {} }); }
+    catch (err) { btn.disabled = false; toast(err.message, "bad"); return; }
+    btn.textContent = t("Restarting…");
+    for (let i = 0; i < 80; i++) { await pause(500); try { const m = await fetch("/api/meta").then((r) => r.json()); if (m.build && m.build !== was) { location.reload(); return; } } catch {} }
+    btn.disabled = false; btn.textContent = t("Restart the server"); toast(t("The server did not come back. Open Ecelon Station again from its shortcut."), "bad");
+  };
+}
+
+// ================= free chats =================
+// One assistant, no project and no team: for a question, a draft, a file to look at. Listed apart from the
+// projects, newest first, named after the first message. "Turn into a project" gives it a folder and a team.
+let ccImported = 0; // conversations an earlier version copied from Claude Code sessions into projects
+async function refreshCcSessions() {
+  try { ccImported = (await api("/api/cc-sessions/imported")).length; } catch { ccImported = 0; }
+  renderChats();
+}
+// Chats are the ones started here, newest first; they live in the station and nowhere else.
+function renderChats() {
+  const sel = selectedId, rows = [];
+  for (const a of chatList()) {
+    const busy = isBusy(a), wait = a.attention && !busy, when = new Date(a.lastUsedAt || a.createdAt || 0).getTime();
+    const sub = busy ? (actText.get(a.id) || t("Working…")) : wait ? t("Waiting for you") : (when ? notifTime(when) : "");
+    rows.push({ at: busy || wait ? Infinity : when, html: `<div class="ch-row${a.id === sel ? " sel" : ""}${busy ? " busy" : wait ? " wait" : ""}"><button type="button" class="ch-open" data-chat="${escHtml(a.id)}"><b>${escHtml(a.name)}</b><span>${escHtml(sub)}</span></button>` +
+      `<button type="button" class="ch-act" data-chat-ren="${escHtml(a.id)}" title="${escHtml(t("Rename"))}" aria-label="${escHtml(t("Rename {name}", { name: a.name }))}">${ICON.edit}</button>` +
+      `<button type="button" class="ch-act del" data-chat-del="${escHtml(a.id)}" title="${escHtml(t("Delete chat"))}" aria-label="${escHtml(t("Delete {name}", { name: a.name }))}">${ICON.trash}</button></div>` });
+  }
+  rows.sort((p, q) => q.at - p.at);
+  const html = `<header class="ch-head"><h2>${escHtml(t("Chats"))}</h2><button type="button" class="ch-new" data-chat-new>${escHtml(t("New chat"))}</button></header>` +
+    `<p class="ch-note">${escHtml(t("One assistant, no project and no team. A chat started here stays here."))}</p>` +
+    (rows.length ? `<div class="ch-rows">${rows.slice(0, 40).map((r) => r.html).join("")}</div>` : `<p class="ch-empty">${escHtml(t("No chats yet. Start one with New chat."))}</p>`) +
+    (ccImported ? `<button type="button" class="ch-undo" data-cc-undo>${escHtml(t("Take back the {n} brought in", { n: ccImported }))}</button>` : "");
+  for (const el of document.querySelectorAll("#chat-list, .bd-chats")) setHtml(el, html);
+}
+async function newChat() {
+  try { const a = await api("/api/chats", { method: "POST", body: {} }); await refresh(); await selectAgent(a.id); $("#prompt")?.focus(); }
+  catch (e) { toast(e.message, "bad"); }
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-chat-new]")) { newChat(); return; }
+  const ren = e.target.closest("[data-chat-ren]"); if (ren) { renameChat(ren.dataset.chatRen); return; }
+  const del = e.target.closest("[data-chat-del]"); if (del) { deleteChat(del.dataset.chatDel); return; }
+  const row = e.target.closest("[data-chat]"); if (row) { selectAgent(row.dataset.chat); return; }
+  if (e.target.closest("[data-cc-undo]")) undoImports();
+});
+async function renameChat(id) {
+  const a = agents.find((x) => x.id === id); if (!a) return;
+  const name = (await askText(t("Rename chat"), t("Chat name"), a.name, { ok: t("Save") }))?.trim(); if (!name || name === a.name) return;
+  try { await api(`/api/agents/${a.id}`, { method: "PATCH", body: { name } }); await refresh(); } catch (err) { toast(err.message, "bad"); }
+}
+// A chat has no folder of the user's behind it, so deleting it is final: say so, then remove it with its transcript.
+async function deleteChat(id) {
+  const a = agents.find((x) => x.id === id); if (!a) return;
+  if (!(await confirmBox({ title: t("Delete {name}?", { name: a.name }), body: t("The chat and everything written in it are deleted. This cannot be undone."), ok: t("Delete chat"), danger: true }))) return;
+  try { await api(`/api/agents/${a.id}`, { method: "DELETE" }); } catch (err) { toast(err.message, "bad"); return; }
+  if (selectedId === a.id) closePanel();
+  await refresh(); toast(t("{name} deleted", { name: a.name }));
+}
+async function undoImports() {
+  if (!(await confirmBox({ title: t("Take back what was brought in?"), body: t("{n} {n|conversation|conversations} made from Claude Code sessions will be removed from their projects here. The sessions themselves stay in Claude Code, untouched, and each project goes back to its previous conversation.", { n: ccImported }), ok: t("Take them back") }))) return;
+  try { const r = await api("/api/cc-sessions/undo", { method: "POST", body: {} }); await refresh(); if (current()) loadChat(); await refreshCcSessions(); toast(r.skipped?.length ? t("{n} taken back; still running, left alone: {names}", { n: r.removed, names: r.skipped.join(", ") }) : t("{n} taken back.", { n: r.removed }), "good"); }
+  catch (err) { toast(err.message, "bad"); }
+}
+$("#btn-attach").onclick = async () => {
+  const a = current(); if (!a?.solo) return;
+  try {
+    const r = await api("/api/pick-folder", { method: "POST", body: { start: "" } }); if (r.cancelled || !r.path) return;
+    await api(`/api/chats/${a.id}/attach`, { method: "POST", body: { cwd: r.path } });
+    await refresh(); document.body.classList.remove("solo-chat"); fillHeader(current());
+    toast(t("{name} is now a project with a full team. What was said here stays; the team starts a new session, so tell it what to carry on with.", { name: r.name || a.name }), "good");
+  } catch (e) { toast(e.message, "bad"); }
+};
+
+// ================= audit trail =================
+const AUDIT_GROUPS = () => [["all", t("All"), null], ["perm", t("Permissions"), ["allow_once", "allow_always", "permission_mode", "denied"]], ["command", t("Commands"), ["command"]], ["file", t("Files"), ["file"]], ["verify", t("Verification"), ["verify", "revert"]], ["project", t("Projects"), ["project"]]];
+const AUDIT_LABEL = () => ({ command: t("ran"), file: t("wrote"), allow_once: t("allowed once"), allow_always: t("always allows"), permission_mode: t("permission mode"), denied: t("was refused"), verify: t("verified"), revert: t("undid"), project: "" });
+let auditState = { team: "", group: "all", all: false };
+async function openAudit(tk) {
+  auditState = { team: tk || "", group: "all", all: !tk };
+  const d = $("#dlg-audit"); $("#au-all").checked = auditState.all; $("#au-chain").textContent = "";
+  if (!d.open) d.showModal();
+  await renderAudit(true);
+}
+async function renderAudit(check = false) {
+  const groups = AUDIT_GROUPS(), g = groups.find((x) => x[0] === auditState.group) || groups[0], L = AUDIT_LABEL();
+  const qs = new URLSearchParams(); if (!auditState.all && auditState.team) qs.set("team", auditState.team); if (g[2]) qs.set("kind", g[2].join(",")); if (check) qs.set("check", "1");
+  $("#au-kinds").innerHTML = groups.map(([k, l]) => `<button type="button" class="b2-chip${k === auditState.group ? " on" : ""}" data-g="${k}">${escHtml(l)}</button>`).join("");
+  $("#au-csv").href = "/api/audit.csv?" + qs.toString().replace(/&?check=1/, "");
+  let r; try { r = await api("/api/audit?" + qs); } catch (e) { toast(e.message, "bad"); return; }
+  if (r.chain) { const c = $("#au-chain"); c.className = "au-chain " + (r.chain.ok ? "ok" : "bad"); c.textContent = r.chain.ok ? t("Chain intact · {n} {n|entry|entries}", { n: r.chain.count }) : t("Chain broken at entry {n}", { n: r.chain.brokenAt }); c.title = t("Every entry carries the hash of the previous one. 'Broken' means a line was changed or removed after it was written."); }
+  const tb = $("#au-rows"); tb.innerHTML = ""; $("#au-empty").hidden = r.entries.length > 0; tb.closest(".py-wrap").hidden = !r.entries.length;
+  let day = "";
+  for (const e of r.entries) {
+    if (dayKey(e.t) !== day) { day = dayKey(e.t); const h = document.createElement("tr"); h.className = "au-day"; h.innerHTML = "<td colspan=\"3\"></td>"; h.firstChild.textContent = dayLabel(e.t); tb.append(h); }
+    const tr = document.createElement("tr"); tr.className = "au-k-" + e.kind + (e.ok === false ? " bad" : "");
+    tr.innerHTML = "<td class=\"au-t\"></td><td class=\"au-w\"><b></b><span></span></td><td class=\"au-x\"><em></em><code></code><small></small></td>";
+    tr.querySelector(".au-t").textContent = new Date(e.t).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    tr.querySelector("b").textContent = e.role === "user" ? t("You") : e.who; tr.querySelector(".au-w span").textContent = e.role === "user" ? "" : (meta.roles?.[e.role]?.label || e.role);
+    tr.querySelector("em").textContent = L[e.kind] ?? e.kind; tr.querySelector("code").textContent = e.what; tr.querySelector("small").textContent = e.extra || "";
+    tr.title = e.h; tb.append(tr);
+  }
+}
+$("#au-kinds").onclick = (e) => { const b = e.target.closest("[data-g]"); if (b) { auditState.group = b.dataset.g; renderAudit(); } };
+$("#au-all").onchange = (e) => { auditState.all = e.target.checked; renderAudit(); };
+$("#au-close").onclick = () => $("#dlg-audit").close();
+$("#btn-audit").onclick = () => { $("#menu-pop").hidden = true; openAudit(current() ? teamKey(current()) : ""); };
 
 // the TV replays the day of a room: every run, hand-off, file written and test result, compressed into ~40 seconds
 let replay = null;
@@ -714,6 +968,56 @@ function stopReplay() {
 
 // morning stand-up: the first time the station opens in a day, the camera tours the rooms; each team gathers at its
 // meeting table and the card says what got done yesterday, what is open today and what blocks it
+// ================= demo tour =================
+// In demo mode the station offers to play the whole loop by itself once: the analyst turns the document into
+// requirements, compares them with the code, a different agent (the tester) verifies with evidence, and the one
+// item the document calls "done" without proof ends up as a mismatch. Nothing is faked for the tour: it sends the
+// same three prompts the Scope buttons send and waits for the (scripted) agents to finish.
+const TOUR_KEY = "ecelon.tourDone";
+let tour = null;
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+async function waitRun(id, max = 60000) {
+  const t0 = Date.now(); let seen = false;
+  while (tour && Date.now() - t0 < max) {
+    const a = agents.find((x) => x.id === id);
+    if (a && isBusy(a)) seen = true; else if (seen || Date.now() - t0 > 8000) return;
+    await pause(250);
+  }
+}
+function tourCard({ step = 0, title, text, actions = [] }) {
+  const box = $("#tour"); if (box.parentNode !== document.body) document.body.append(box); // above every screen, the Scope screen included
+  box.hidden = false;
+  box.querySelector(".tr-dots").innerHTML = [1, 2, 3, 4].map((i) => `<i class="${i <= step ? "on" : ""}"></i>`).join("");
+  box.querySelector("h3").textContent = title; box.querySelector("p").textContent = text;
+  const act = box.querySelector(".tr-act"); act.innerHTML = "";
+  for (const [label, fn, primary] of actions) { const b = document.createElement("button"); b.type = "button"; b.className = "btn sm " + (primary ? "primary" : "ghost"); b.textContent = label; b.onclick = fn; act.append(b); }
+}
+function endTour(done = true) { tour = null; $("#tour").hidden = true; if (done) lsSet(TOUR_KEY, 1); }
+async function playTour() {
+  const lead = agents.find((a) => roleOf(a) === "dev" && /api/i.test(a.name)) || agents.find((a) => roleOf(a) === "dev");
+  if (!lead || tour) return;
+  const team = teamOf(lead), analyst = team.find((a) => roleOf(a) === "analyst"), tester = team.find((a) => roleOf(a) === "tester");
+  if (!analyst || !tester) return;
+  tour = { lead }; lsSet(TOUR_KEY, 1);
+  const skip = [t("Skip"), () => endTour()];
+  const run = async (step, title, text, agent, prompt) => {
+    if (!tour) return;
+    tourCard({ step, title, text, actions: [skip] }); station.focus(lead.id);
+    await sendPrompt({ text: prompt }, agent); await waitRun(agent.id); await pause(900);
+  };
+  await run(1, t("The analyst reads the document"), t("It turns the linked analysis document into numbered requirements, each with the document's own wording."), analyst, t("Extract the requirements from the linked documents and save them to the Scope list."));
+  await run(2, t("…and checks every item against the code"), t("Each requirement gets a status and a pointer to the file and line where it lives, or a note saying it is missing."), analyst, t("Compare the requirements with the code and update their status."));
+  await run(3, t("A different agent verifies"), t("The tester did not write the code. It runs the scenarios and must attach evidence: lines or tests that really exist in the project."), tester, t("Verify the requirements with evidence."));
+  if (!tour) return;
+  reqsUI.open(lead);
+  tourCard({ step: 4, title: t("One item says “done” but nothing proves it"), text: t("That is a mismatch, not a green tick. The proof report puts the whole chain on one page you can hand to somebody else."),
+    actions: [[t("Open the proof report"), () => { window.open(`/api/reqs/${encodeURIComponent(teamKey(lead))}/report`, "_blank", "noopener"); endTour(); }, true], [t("Close"), () => endTour()]] });
+}
+function offerTour() {
+  if (!meta.demo || tour || lsGet(TOUR_KEY, 0)) return;
+  tourCard({ step: 0, title: t("See the whole loop in a minute"), text: t("Document → requirements → code → verification with evidence, played by the sample team. You only watch."),
+    actions: [[t("Play"), () => playTour(), true], [t("Not now"), () => endTour()]] });
+}
 const STANDUP_KEY = "standupDay";
 const sameDay = () => new Date().toDateString();
 let standup = null;
@@ -766,7 +1070,7 @@ async function startStandup(auto = false) {
 }
 $("#standup-btn").onclick = () => (standup ? standup.end() : startStandup(false));
 // once a day, after 06:00, a few seconds after opening (when the data is in)
-setTimeout(() => { let last = ""; try { last = localStorage.getItem(STANDUP_KEY) || ""; } catch {} if (last !== sameDay() && new Date().getHours() >= 6 && !selectedId && !document.body.classList.contains("focus")) startStandup(true); }, 6000);
+setTimeout(() => { let last = ""; try { last = localStorage.getItem(STANDUP_KEY) || ""; } catch {} if (last !== sameDay() && new Date().getHours() >= 6 && !meta.demo && !proView && !selectedId && !document.body.classList.contains("focus")) startStandup(true); }, 6000);
 
 // approval queue: everyone waiting for permission, across all projects, grant from here
 function renderInbox() {
@@ -844,8 +1148,8 @@ async function refresh() {
   if (seq !== refreshSeq) return; // a newer refresh started; the old response must not overwrite it
   agents = list;
   if (firstRefresh) { firstRefresh = false; for (const id of queue.keys()) if (!agents.some((x) => x.id === id)) queue.delete(id); saveQueue(); setTimeout(() => { for (const id of queue.keys()) flushQueue(id); }, 1500); }
-  station.setAgents(agents);
-  pushOffice();
+  station.setAgents(agents.filter((a) => !a.solo)); // a free chat has no room
+  pushOffice(); renderChats();
   for (const id of queue.keys()) flushQueue(id); // the server tells us (agents_changed) when a slot is free: send what is waiting
   station.select(selectedId);
   $("#empty-hint").hidden = agents.length > 0;
@@ -859,6 +1163,7 @@ let listRaf = 0;
 const scheduleList = () => { if (!listRaf) listRaf = requestAnimationFrame(() => { listRaf = 0; renderListNow(); }); };
 function renderList() { scheduleList(); }
 function renderListNow() {
+  if (proView) renderBoard();
   const ul = $("#agent-list"); ul.innerHTML = "";
   for (const tk of teamOrder()) {
     const team = teamOf(agents.find((x) => teamKey(x) === tk));
@@ -909,6 +1214,7 @@ const permOf = (a) => a.permission || "acceptEdits";
 function fillHeader(a) {
   if (!$("#a-name").isContentEditable) { $("#a-name").textContent = a.name; $("#a-name").title = t("{name} (click to rename)", { name: a.name }); }
   $("#a-path").textContent = shortPath(a.cwd); $("#a-path").title = a.cwd;
+  $("#btn-remove").textContent = a.solo ? t("Delete chat") : t("Remove project from the station");
   $("#a-portrait").style.backgroundImage = portraitUrl(a.char ?? indexOf(a.id));
   $("#model-name").textContent = modelName(a.model);
   $("#effort-name").textContent = effortName(a.effort); $("#effort-btn").title = `${t("Effort: {effort}.", { effort: effortName(a.effort) })} ${EFFORT_DESC[a.effort] || ""}`;
@@ -996,7 +1302,7 @@ async function selectAgent(id) {
   if (!prev || teamKey(prev) !== teamKey(a)) restoreDraft(teamKey(a));
   if (unread.delete(teamKey(a))) { saveUnread(); renderList(); }
   lastPick.set(teamKey(a), id);
-  $("#panel-empty").hidden = true; $("#panel-agent").hidden = false;
+  $("#panel-empty").hidden = true; $("#panel-agent").hidden = false; document.body.classList.add("has-agent"); document.body.classList.toggle("solo-chat", !!a.solo); if (proView) renderBoard(); renderChats();
   fillHeader(a);
   await loadChat();
 }
@@ -1052,7 +1358,7 @@ async function loadChat(more = false) {
 function closePanel() {
   if (current()) saveDraft(teamKey(current()));
   selectedId = null; station.select(null); closePops();
-  $("#panel-agent").hidden = true; $("#panel-empty").hidden = false;
+  $("#panel-agent").hidden = true; $("#panel-empty").hidden = false; document.body.classList.remove("has-agent", "solo-chat"); if (proView) renderBoard(); renderChats();
 }
 
 // ---- shared dropdown (model / effort / permission) — opens above the message box
@@ -1318,6 +1624,7 @@ const ICON = {
   copy: `<svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="2"/><path d="M3.5 10.5h-.5A1.5 1.5 0 0 1 1.5 9V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>`,
   check: `<svg viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5"/></svg>`,
   edit: `<svg viewBox="0 0 16 16"><path d="M11 2.5 13.5 5 6 12.5H3.5V10Z"/></svg>`,
+  trash: `<svg viewBox="0 0 16 16"><path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.6 8a1 1 0 0 0 1 .9h4.8a1 1 0 0 0 1-.9l.6-8M6.8 7v4M9.2 7v4"/></svg>`,
   redo: `<svg viewBox="0 0 16 16"><path d="M13 3v4H9"/><path d="M13 7a5.5 5.5 0 1 0-1.4 4.7"/></svg>`,
 };
 function actions(d, list) {
@@ -1754,7 +2061,7 @@ function notifMeta(x) {
   const bits = [];
   if (x.turns) bits.push(t("{n} {n|step|steps}", { n: x.turns }));
   if (x.durationMs) bits.push(x.durationMs >= 90000 ? t("{n} min", { n: Math.round(x.durationMs / 60000) }) : t("{n} s", { n: Math.round(x.durationMs / 1000) }));
-  if (x.costUsd) bits.push(money(x.costUsd));
+  if (x.costUsd && !proView) bits.push(money(x.costUsd));
   return bits.join(" · ");
 }
 // rows for the list: the same member asking for the same permission again and again becomes one row with a count
@@ -1921,6 +2228,7 @@ function connectWS() {
   ws.onmessage = (m) => {
     let ev; try { ev = JSON.parse(m.data); } catch { return; }
     if (ev.type === "reload") { location.reload(); return; }
+    if (ev.type === "server_stale") { staleBar("stale"); return; }
     if (ev.type === "agents_changed") { refresh(); gitSoon(); return; }
     if (ev.type === "usage") { usage = ev.usage || {}; renderUsage(); return; }
     if (ev.type === "library") { lib.load().catch(() => {}); return; }
@@ -2213,7 +2521,7 @@ async function removeProject(a) {
   if (current() && teamKey(current()) === teamKey(a)) closePanel();
   await refresh(); toast(t("{name} removed", { name: a.name }));
 }
-$("#btn-remove").onclick = () => { closePops(); if (current()) removeProject(leadOf(current())); };
+$("#btn-remove").onclick = () => { closePops(); const a = current(); if (!a) return; if (a.solo) deleteChat(a.id); else removeProject(leadOf(a)); };
 $("#btn-remove-role").onclick = async () => {
   closePops();
   const a = current(); const rest = teamOf(a).filter((m) => m.id !== a.id);
@@ -2396,12 +2704,16 @@ $("#bc-form").addEventListener("submit", async (e) => {
 
 // ================= startup =================
 meta = await api("/api/meta");
+if (!meta.build) staleBar("old"); else if (meta.stale) staleBar("stale");
 usage = await api("/api/usage").catch(() => ({})); renderUsage();
 $("#mode-badge").textContent = meta.mock ? t("Demo mode") : "";
+document.body.style.setProperty("--l-new", JSON.stringify(t("new")));
 if (meta.claudeMissing) { const w = $("#cli-warn"); w.textContent = meta.claudeMissing; w.hidden = false; }
 await refresh();
 lib.load().catch(() => {});
 refreshGitSummary(); refreshOverview(); refreshPayroll();
+setTimeout(offerTour, 1500); refreshCcSessions(); setInterval(refreshCcSessions, 180000);
+applyView();
 connectWS();
 const q = new URLSearchParams(location.search).get("agent");
 if (q) { const a = agents.find((x) => x.name === q || x.id === q); if (a) selectAgent(a.id); }

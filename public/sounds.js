@@ -40,8 +40,9 @@ export const sfx = {
   get on() { return enabled; },
   set(on) { enabled = !!on; try { localStorage.setItem("sfx", enabled ? "1" : "0"); } catch {} if (enabled && ensure()?.state === "suspended") ctx.resume(); },
   init() { try { enabled = localStorage.getItem("sfx") === "1"; } catch {} return enabled; },
+  muted: false, // the professional view is silent whatever the switch says
   play(name) {
-    if (!enabled || !CUES[name] || !ensure()) return;
+    if (!enabled || this.muted || !CUES[name] || !ensure()) return;
     if (ctx.state === "suspended") { ctx.resume(); return; }
     if (name === "key") { const t = performance.now(); if (t - lastKey < 70) return; lastKey = t; }
     try { CUES[name](); } catch {}

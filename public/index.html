@@ -26,6 +26,7 @@
 <body>
 <div id="app">
   <main id="stage">
+    <section id="board" hidden data-i18n-attr="aria-label" aria-label="Projects"></section>
     <canvas id="scene" data-i18n-attr="aria-label" aria-label="Station map: every module is a project"></canvas>
 
     <header id="topbar">
@@ -36,6 +37,7 @@
       </div>
       <div class="top-actions">
         <button id="usage-btn" class="usage" hidden data-i18n-attr="title" title="Claude usage limits"></button>
+        <button id="btn-view" class="btn ghost icon-btn-top" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M7 7h.01M7 17h.01"/></svg></button>
         <button id="btn-lang" class="btn ghost icon-btn-top lang-btn" type="button" title="Language / Dil" aria-haspopup="listbox"></button>
         <button id="btn-sfx" class="btn ghost icon-btn-top" type="button" data-i18n-attr="title" title="Office sounds (off)" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6v4h2.6L9 13V3L5.1 6z"/><path class="sfx-w" d="M11 5.5a3.6 3.6 0 0 1 0 5M12.8 3.6a6.2 6.2 0 0 1 0 8.8"/><path class="sfx-x" d="M11 6l3 4M14 6l-3 4"/></svg></button>
         <button id="btn-notify" class="btn ghost icon-btn-top" type="button" data-i18n-attr="title" title="Notifications" aria-pressed="false">
@@ -93,6 +95,11 @@
       <button type="button" class="rp-speed" data-i18n-attr="title" title="Speed">1×</button>
       <button type="button" class="rp-x" data-i18n-attr="title,aria-label" title="Close" aria-label="Close">×</button>
     </section>
+    <section id="tour" hidden aria-live="polite">
+      <div class="tr-top"><span class="tr-kicker" data-i18n>Demo</span><span class="tr-dots"></span></div>
+      <h3></h3><p></p>
+      <div class="tr-act"></div>
+    </section>
     <section id="standup" hidden aria-live="polite">
       <div class="su-top"><span class="su-kicker" data-i18n>Morning stand-up</span><span class="su-dots"></span><button type="button" class="su-skip" data-i18n>Skip</button></div>
       <h3 class="su-room"></h3>
@@ -126,6 +133,7 @@
       </div>
       <div id="cli-warn" class="cli-warn" role="alert" hidden></div>
       <ul id="agent-list"></ul>
+      <section id="chat-list" class="chat-list"></section>
       <p class="list-hint"><span data-i18n>Drag to reorder the list (in 3D, hold a room and move it)</span> · <span data-i18n>right-click: shortcuts</span> · <kbd>Ctrl</kbd>+<kbd>K</kbd> <span data-i18n>quick switch</span></p>
     </section>
 
@@ -141,6 +149,7 @@
           <div class="a-row"><span id="a-status" class="status st-idle" data-i18n>Idle</span><button type="button" id="linked-docs" class="a-linked" hidden></button></div>
         </div>
         <div class="head-actions menu">
+          <button id="btn-attach" class="hbtn" type="button" data-i18n-attr="title" title="Give this chat a project folder: it becomes a project with a full team (developer, analyst, tester, reviewer)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg><span data-i18n>Turn into a project</span></button>
           <button id="btn-focus" class="hbtn fx-btn" aria-pressed="false" data-i18n-attr="title,aria-label" title="Focus mode: chat in full width, projects on the left, 3D scene off (Ctrl+\)" aria-label="Focus mode">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
           </button>
@@ -171,6 +180,7 @@
           <div id="menu-pop" class="pop" role="menu" hidden>
             <button type="button" id="btn-folder" role="menuitem" data-i18n>Open project folder</button>
             <button type="button" id="btn-links" role="menuitem" data-i18n>Linked projects…</button>
+            <button type="button" id="btn-audit" role="menuitem" data-i18n>Audit trail…</button>
             <button type="button" id="btn-remove-role" role="menuitem" class="danger" hidden data-i18n>Remove this role from the team</button>
             <button type="button" id="btn-remove" role="menuitem" class="danger" data-i18n>Remove project from the station</button>
           </div>
@@ -359,7 +369,8 @@
       <button type="button" class="btn ghost sm" data-act="verify" data-i18n-attr="title" title="The tester actually tries the unverified items and verifies them with evidence" data-i18n>Verify with the tester</button>
       <button type="button" class="btn ghost sm" data-act="review" data-i18n-attr="title" title="The reviewer reads the document independently of the list and finds requirements missing from it" data-i18n>Second opinion</button>
       <button type="button" class="btn ghost sm" data-act="add" data-i18n>+ Item</button>
-      <button type="button" class="btn primary sm" data-act="export" data-i18n-attr="title" title="Download as a Markdown report" data-i18n>Export</button>
+      <button type="button" class="btn ghost sm" data-act="export" data-i18n-attr="title" title="Download as a Markdown report" data-i18n>Export</button>
+      <button type="button" class="btn primary sm" data-act="proof" data-i18n-attr="title" title="One page for a manager or a customer: what the document says, where it is in the code, how it was verified and by whom. Opens in a new tab; print it or save it." data-i18n>Proof report</button>
     </div>
   </header>
   <div class="rq-body">
@@ -489,6 +500,17 @@
       <button type="button" class="btn ghost" id="rp-copy"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8.5" height="8.5" rx="2"/><path d="M3.5 10.5h-.5A1.5 1.5 0 0 1 1.5 9V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg><span data-i18n>Copy</span></button>
       <button type="button" class="btn primary" id="rp-close" data-i18n>Close</button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-audit" aria-labelledby="au-title" class="wide au-dlg">
+  <form method="dialog">
+    <div class="au-head"><h3 id="au-title" data-i18n>Audit trail</h3><span id="au-chain" class="au-chain"></span></div>
+    <p class="muted" data-i18n>What ran, what was written and who allowed what. Append-only; every entry is chained to the one before it, so a changed or removed line shows.</p>
+    <div class="au-bar"><div id="au-kinds" class="au-kinds"></div><label class="au-all"><input type="checkbox" id="au-all"><span data-i18n>All projects</span></label></div>
+    <div class="py-wrap au-wrap"><table class="py-items au-items"><thead><tr><th data-i18n>Time</th><th data-i18n>Who</th><th data-i18n>What</th></tr></thead><tbody id="au-rows"></tbody></table></div>
+    <p class="muted" id="au-empty" hidden data-i18n>Nothing recorded yet. Entries start from the moment this version runs; earlier work is in the conversation history.</p>
+    <div class="dlg-actions"><a class="btn ghost" id="au-csv" download data-i18n>Download CSV</a><button type="button" class="btn primary" id="au-close" data-i18n>Close</button></div>
   </form>
 </dialog>
 
