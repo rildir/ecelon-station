@@ -7,11 +7,12 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { tempData, rm } from "./_setup.mjs";
 
+// git identity first: server/worktrees.js copies process.env when it loads, and CI runners have no global identity
+process.env.GIT_AUTHOR_NAME = process.env.GIT_COMMITTER_NAME = "T"; process.env.GIT_AUTHOR_EMAIL = process.env.GIT_COMMITTER_EMAIL = "t@t";
 const DATA = tempData();
 const wt = await import("../server/worktrees.js");
 test.after(() => rm(DATA));
 const git = (cwd, ...a) => execFileSync("git", a, { cwd, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@t" } }).trim();
-process.env.GIT_AUTHOR_NAME = process.env.GIT_COMMITTER_NAME = "T"; process.env.GIT_AUTHOR_EMAIL = process.env.GIT_COMMITTER_EMAIL = "t@t";
 function repo(name) {
   const d = path.join(DATA, "repos", name); fs.mkdirSync(path.join(d, "app"), { recursive: true });
   git(d, "init", "-q", "-b", "main"); fs.writeFileSync(path.join(d, "a.txt"), "one\n"); fs.writeFileSync(path.join(d, "app", "x.js"), "1\n");
@@ -26,7 +27,7 @@ test("a task gets its own copy and branch; merging brings the work back and clea
   const s = await wt.summary(w); assert.deepEqual([s.files, s.added, s.removed], [2, 2, 0]);
   assert.match(await wt.diff(w), /new\.txt/);
   const m = await wt.merge(w, "T-001: test"); assert.equal(m.ok, true); assert.equal(m.into, "main");
-  assert.equal(fs.readFileSync(path.join(r, "new.txt"), "utf8"), "hi\n");
+  assert.equal(fs.readFileSync(path.join(r, "new.txt"), "utf8").replace(/\r\n/g, "\n"), "hi\n"); // git on Windows may check the file out with CRLF
   assert.equal(fs.existsSync(w.dir), false); assert.equal(git(r, "branch", "--list", w.branch), "");
 });
 
