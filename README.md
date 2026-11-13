@@ -24,14 +24,14 @@ Run several tasks at once, each on its own git branch, and merge what you approv
 No Claude Code, no API key and no project of your own needed: the demo runs scripted agents on three sample projects.
 
 ```bash
-npx ecelon-station --demo
+npx github:rildir/ecelon-station --demo
 ```
 
 It opens `http://127.0.0.1:4777` and offers to **play the whole loop by itself** (about a minute, you only watch). The
 demo keeps its data in a folder of its own, so it never mixes with your real projects.
 
 For real work, install [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude --version` must work), run
-`npx ecelon-station` and press **Add project**. On Windows you can also use the
+`npx github:rildir/ecelon-station` and press **Add project**. On Windows you can also use the
 [desktop app](#desktop-app-windows).
 
 <details><summary>From a clone</summary>

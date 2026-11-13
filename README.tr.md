@@ -24,14 +24,14 @@ numaralı gereksinimlere dönüşür, kodu lider yazar ve hiçbir madde, onu yaz
 Claude Code, API anahtarı ya da kendi projen gerekmez: demo, üç örnek projede senaryolu ajanlar çalıştırır.
 
 ```bash
-npx ecelon-station --demo
+npx github:rildir/ecelon-station --demo
 ```
 
 `http://127.0.0.1:4777` açılır ve **bütün döngüyü kendi kendine oynatmayı** önerir (yaklaşık bir dakika, sen yalnızca
 izlersin). Demo verisini ayrı bir klasörde tutar; gerçek projelerine karışmaz.
 
 Gerçek iş için [Claude Code](https://docs.claude.com/en/docs/claude-code) kur (`claude --version` çalışmalı),
-`npx ecelon-station` komutunu çalıştır ve **Proje ekle**'ye bas. Windows'ta
+`npx github:rildir/ecelon-station` komutunu çalıştır ve **Proje ekle**'ye bas. Windows'ta
 [masaüstü uygulamasını](#masaüstü-uygulaması-windows) da kullanabilirsin.
 
 <details><summary>Klondan</summary>
