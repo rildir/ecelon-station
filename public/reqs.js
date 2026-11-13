@@ -130,7 +130,7 @@ export function createReqs(ctx) {
     const sa = e.target.closest("[data-sact]"); if (sa) return segAction(sa.dataset.sact, sa.closest("[data-sid]")?.dataset.sid);
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (act === "close") return close();
-    if (act === "lib") { close(); return ctx.openLibrary(proj?.lead.id); }
+    if (act === "lib") { const lead = proj?.lead; close(); return ctx.openLibrary(lead?.id); }
     if (act === "extract") return askAnalyst("extract");
     if (act === "compare") return askAnalyst("compare");
     if (act === "add") return addItem();
@@ -162,7 +162,7 @@ export function createReqs(ctx) {
 
   async function askAnalyst(kind) {
     if (!proj.analyst) return ctx.toast(t("This project has no analyst"), "bad");
-    if (kind === "extract" && !ctx.linkedCount(proj.lead)) { ctx.toast(t("First link the analysis document to this project"), "bad"); close(); return ctx.openLibrary(proj.lead.id); }
+    if (kind === "extract" && !ctx.linkedCount(proj.lead)) { ctx.toast(t("First link the analysis document to this project"), "bad"); const lead = proj.lead; close(); return ctx.openLibrary(lead.id); }
     if (kind === "compare" && !data.items.length) return ctx.toast(t("First extract requirements from the document"), "bad");
     if (kind !== "compare" && kind !== "extract" && !cov?.stats?.total) return ctx.toast(t("No linked document with readable text"), "bad");
     const text = kind === "extract"

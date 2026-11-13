@@ -28,7 +28,7 @@ Next
 
 browser = FindBrowser()
 If browser <> "" Then
-  sh.Run """" & browser & """ --app=" & url & " --window-size=1600,960", 1, False
+  sh.Run """" & browser & """ --app=" & url & "/?app=1 --window-size=1600,960", 1, False
 Else
   sh.Run url
 End If
