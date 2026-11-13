@@ -98,7 +98,7 @@ export function createLibrary(ctx) {
   // ---------- left menu
   function renderSide() {
     const count = (f) => docs.filter(f).length;
-    const item = (key, icon, label, n, extra = "") => `<button type="button" class="ls-item${key ? "" : ""}" ${extra}>${icon}<span class="ls-label">${escHtml(label)}</span><span class="ls-n">${n}</span></button>`;
+    const item = (key, icon, label, n, extra = "") => `<button type="button" class="ls-item${key ? "" : ""}" ${extra}>${icon}<span class="ls-label" title="${escHtml(label)}">${escHtml(label)}</span><span class="ls-n">${n}</span></button>`;
     const on = (type, id) => (filter.type === type && (id === undefined || filter.id === id) ? ' aria-current="true"' : "");
     let h = `<div class="ls-group">
       ${item(1, I.stack, t("All documents"), docs.length, `data-f="all"${on("all")}`)}
@@ -110,7 +110,7 @@ export function createLibrary(ctx) {
       : `<p class="ls-empty">${t("Group by module or customer: <i>Stock</i>, <i>Accounting</i>, <i>Meetings</i>…")}</p>`;
     h += `</div><div class="ls-head"><span>${t("Linked to projects")}</span></div><div class="ls-group">`;
     const ags = ctx.agents();
-    h += ags.map((a) => `<button type="button" class="ls-item ls-agent" data-f="agent" data-id="${a.id}"${on("agent", a.id)}><i class="ls-port" style="background-image:${ctx.portrait(a)}"></i><span class="ls-label">${escHtml(ctx.label(a))}</span><span class="ls-n">${count((d) => d.agents.includes(a.id)) || ""}</span></button>`).join("");
+    h += ags.map((a) => `<button type="button" class="ls-item ls-agent" data-f="agent" data-id="${a.id}"${on("agent", a.id)}><i class="ls-port" style="background-image:${ctx.portrait(a)}"></i><span class="ls-label" title="${escHtml(ctx.label(a))}">${escHtml(ctx.label(a))}</span><span class="ls-n">${count((d) => d.agents.includes(a.id)) || ""}</span></button>`).join("");
     h += `</div><div class="ls-tool" id="lib-tool"></div>`;
     $(".lib-side", root).innerHTML = h;
     renderTool();

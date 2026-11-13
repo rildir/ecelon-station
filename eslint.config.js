@@ -7,8 +7,8 @@ const RULES = { "no-unused-vars": ["warn", { args: "none", caughtErrors: "none" 
 
 export default [
   js.configs.recommended,
-  { ignores: ["node_modules/", "public/vendor/", "data/", "logs/", "demo/"] },
-  { files: ["server/**/*.js", "bin/**/*.js", "scripts/**/*.mjs", "tests/**/*.mjs"], languageOptions: { ecmaVersion: 2024, sourceType: "module", globals: globals.node },
+  { ignores: ["node_modules/", "dist/", "build/", "public/vendor/", "data/", "logs/", "demo/"] },
+  { files: ["server/**/*.js", "desktop/**/*.js", "bin/**/*.js", "scripts/**/*.mjs", "tests/**/*.mjs"], languageOptions: { ecmaVersion: 2024, sourceType: "module", globals: globals.node },
     rules: RULES },
   { files: ["public/**/*.js"], languageOptions: { ecmaVersion: 2024, sourceType: "module", globals: { ...globals.browser, monaco: "readonly", require: "readonly" } },
     rules: RULES },

@@ -34,6 +34,8 @@ export function update(team, id, patch = {}) {
   if (patch.detail != null) it.detail = clip(patch.detail, 4000);
   if (patch.role != null && clip(patch.role, 20)) it.role = clip(patch.role, 20);
   if (PRIORITIES.includes(patch.priority)) it.priority = patch.priority;
+  // an isolated task: { dir, cwd, branch, base, top, agent } while its own copy exists, null once merged or discarded
+  if (patch.wt !== undefined) { if (patch.wt) it.wt = patch.wt; else delete it.wt; }
   it.updatedAt = Date.now(); save(team, d); return it;
 }
 export function remove(team, id) {

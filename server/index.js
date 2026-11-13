@@ -14,6 +14,7 @@ import * as reqs from "./requirements.js";
 import * as gp from "./gitpanel.js";
 import * as cov from "./coverage.js";
 import * as tasks from "./tasks.js";
+import * as worktrees from "./worktrees.js";
 import * as fsx from "./files.js";
 import * as runs from "./runs.js";
 import { listAgents, getAgent, addAgent, addMember, teamOf, ensureFullTeams, updateAgent, attachChat, dropSessionChats, removeAgent, reorderAgents, MODELS, EFFORTS, PERMISSIONS } from "./agents.js";
@@ -177,6 +178,15 @@ const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 function codeStamp() { try { return fs.readdirSync(SERVER_DIR).filter((n) => n.endsWith(".js")).sort().map((n) => { const st = fs.statSync(path.join(SERVER_DIR, n)); return `${n}:${st.size}:${Math.round(st.mtimeMs)}`; }).join("|"); } catch { return ""; } }
 const BOOT_STAMP = codeStamp(), BOOT_AT = Date.now();
 const isStale = () => codeStamp() !== BOOT_STAMP;
+// The desktop app started this server and owns it: on Quit it asks the server to stop. The request must carry the
+// token the app gave the server at start (it survives a restart through the environment); without a token there is
+// no such route, so nothing else on the machine can stop the server this way.
+const SHELL_TOKEN = process.env.ECELON_SHELL_TOKEN || "";
+app.post("/api/quit", (req, res) => {
+  if (!SHELL_TOKEN || req.headers["x-ecelon-shell"] !== SHELL_TOKEN) return res.status(404).json({ error: t("Not found") });
+  res.json({ ok: true, running: running.size });
+  setTimeout(() => { try { for (const r of running.values()) r.kill?.(); for (const c of wss.clients) c.terminate(); server.close(); } catch {} setTimeout(() => process.exit(0), 150); }, 80);
+});
 app.post("/api/restart", (req, res) => {
   if (running.size && !req.body?.force) return res.status(409).json({ error: t("Agents are working. Wait for them to finish, or stop them, before restarting the server."), running: running.size });
   res.json({ ok: true });
@@ -734,7 +744,7 @@ async function startPrompt(agentId, body = {}, opts = {}) {
     // manual handoff (@Role): the latest result of another role is attached to this message
     const from = body.handoffFrom ? team.find((m) => m.id === String(body.handoffFrom) && m.id !== agent.id) : null;
     if (!text) text = docs.length ? t("Review the attached documents.") : t("Look at the attached image.");
-    if (agent.solo && !agent.lastUsedAt && !opts.auto) { // a free chat is named after its first message
+    if (agent.solo && !agent.wt && !agent.lastUsedAt && !opts.auto) { // a free chat is named after its first message
       const title = text.replace(/\s+/g, " ").trim().slice(0, 48); if (title) { try { updateAgent(agent.id, { name: title }); broadcast({ type: "agents_changed" }); } catch {} }
     }
     let promptText = opts.prompt || text;
@@ -1231,7 +1241,11 @@ app.patch("/api/tasks/:team/:id", (req, res) => {
   const it = tasks.update(req.params.team, req.params.id, req.body || {}); if (!it) return res.status(404).json({ error: t("Task not found: {id}", { id: req.params.id }) });
   broadcast({ type: "tasks", team: req.params.team }); res.json(it);
 });
-app.delete("/api/tasks/:team/:id", (req, res) => { tasks.remove(req.params.team, req.params.id); broadcast({ type: "tasks", team: req.params.team }); res.json({ ok: true }); });
+app.delete("/api/tasks/:team/:id", async (req, res) => {
+  const it = tasks.get(req.params.team, req.params.id);
+  if (it?.wt) { running.get(it.wt.agent)?.kill(); await worktrees.discard(it.wt).catch(() => {}); dropTaskAgent(it.wt.agent); } // its own copy goes with it
+  tasks.remove(req.params.team, req.params.id); broadcast({ type: "tasks", team: req.params.team }); res.json({ ok: true });
+});
 // start: hand the task to the role it is for (the result returns to the lead like any other task)
 app.post("/api/tasks/:team/:id/start", async (req, res) => {
   const tk = req.params.team, it = tasks.get(tk, req.params.id); if (!it) return res.status(404).json({ error: t("Task not found: {id}", { id: req.params.id }) });
@@ -1239,11 +1253,68 @@ app.post("/api/tasks/:team/:id/start", async (req, res) => {
   const lead = listAgents().find((x) => (x.team || x.id) === tk && roleOf(x) === "dev"); if (!lead) return res.status(404).json({ error: t("Lead not found") });
   const text = `${t("Task {id} from the task board: {title}", { id: it.id, title: it.title })}${it.detail ? "\n\n" + it.detail : ""}${it.req?.length ? "\n\n" + t("Requirements: {codes}", { codes: it.req.join(", ") }) : ""}\n\n` +
     t("When you finish, call update_task with id {id} (status 'done', and a short result in note). If you get stuck, set 'blocked' and say why.", { id: it.id });
+  if (req.body?.isolated) {
+    if (it.wt) return res.status(409).json({ error: t("This task already has its own copy. Merge or discard it first.") });
+    let wt, a;
+    try {
+      wt = await worktrees.create(lead.cwd, tk, it.id);
+      a = addAgent({ name: `${it.id} · ${it.title}`.slice(0, 80), cwd: wt.cwd, solo: true, model: lead.model, effort: lead.effort, permission: lead.permission, wt: { team: tk, task: it.id, branch: wt.branch } });
+    } catch (e) { if (wt) await worktrees.discard(wt).catch(() => {}); return res.status(400).json({ error: e.message }); }
+    tasks.update(tk, it.id, { status: "doing", wt: { ...wt, agent: a.id }, note: t("Working on its own branch: {branch}", { branch: wt.branch }) });
+    audit({ ...auditBy(lead), who: t("User"), role: "user", kind: "project", what: t("Task {id} started on its own branch {branch}", { id: it.id, branch: wt.branch }), extra: wt.dir });
+    broadcast({ type: "agents_changed" }); broadcast({ type: "tasks", team: tk });
+    try { await startPrompt(a.id, { text: text + "\n\n" + t("You are working in a separate copy of the project, on the branch {branch}. Other agents may work on the same project at the same time; they do not see your changes and you do not see theirs. You do not need to commit: when you finish, the user reviews the changes and merges them. Files that git ignores (dependencies such as node_modules, .env) are not in this copy; install or create them if you need them to run something. There is no task board tool here: end with a short summary of what you changed.", { branch: wt.branch }) }); }
+    catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+    return res.json({ ok: true, agent: a.id, branch: wt.branch });
+  }
   try {
     if (it.role === "dev") { if (running.has(lead.id)) return res.status(409).json({ error: t("Agent is busy; stop it or wait for it to finish") }); await startPrompt(lead.id, { text }); }
     else { const ch = chainOf(lead.id); if (!running.has(lead.id) && !ch.pending.size) { ch.rounds = 0; ch.cancelled = false; } const r = await delegate(lead.id, it.role, text); if (r.error) return res.status(400).json(r); }
   } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
   tasks.update(tk, it.id, { status: "doing" }); broadcast({ type: "tasks", team: tk }); res.json({ ok: true });
+});
+// ---- isolated tasks: look at a task's branch, merge it, or throw it away
+function dropTaskAgent(id) {
+  if (!id || !getAgent(id)) return;
+  running.get(id)?.kill();
+  try { removeAgent(id); } catch {}
+  forgetAgent(id);
+  try { fs.rmSync(path.join(LOG_DIR, id), { recursive: true, force: true }); } catch {}
+  broadcast({ type: "agents_changed" });
+}
+const wtTask = (req, res) => {
+  const it = tasks.get(req.params.team, req.params.id);
+  if (!it) { res.status(404).json({ error: t("Task not found: {id}", { id: req.params.id }) }); return null; }
+  if (!it.wt) { res.status(400).json({ error: t("This task has no branch of its own.") }); return null; }
+  return it;
+};
+app.get("/api/tasks/:team/:id/changes", async (req, res) => {
+  const it = wtTask(req, res); if (!it) return;
+  try { res.json({ ...(await worktrees.summary(it.wt)), diff: req.query.diff ? await worktrees.diff(it.wt) : undefined, running: running.has(it.wt.agent) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.post("/api/tasks/:team/:id/merge", async (req, res) => {
+  const tk = req.params.team, it = wtTask(req, res); if (!it) return;
+  if (running.has(it.wt.agent)) return res.status(409).json({ error: t("Agent is busy; stop it or wait for it to finish") });
+  try {
+    const r = await worktrees.merge(it.wt, `${it.id}: ${it.title}`);
+    if (r.ok) {
+      tasks.update(tk, it.id, { status: "done", wt: null, note: r.message });
+      audit({ ...auditBy(getAgent(it.wt.agent) || { id: tk, team: tk }), who: t("User"), role: "user", kind: "project", what: t("Task {id} merged: {branch} → {into}", { id: it.id, branch: it.wt.branch, into: r.into || "-" }), extra: it.wt.top });
+      dropTaskAgent(it.wt.agent);
+    }
+    broadcast({ type: "tasks", team: tk }); res.json(r);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.post("/api/tasks/:team/:id/discard", async (req, res) => {
+  const tk = req.params.team, it = wtTask(req, res); if (!it) return;
+  try {
+    running.get(it.wt.agent)?.kill();
+    await worktrees.discard(it.wt);
+    tasks.update(tk, it.id, { status: "todo", wt: null, note: t("Its branch was discarded.") });
+    dropTaskAgent(it.wt.agent);
+    broadcast({ type: "tasks", team: tk }); res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 const teamCwd = (team) => listAgents().find((x) => (x.team || x.id) === team)?.cwd;
 app.get("/api/reqs/:team", (req, res) => {
@@ -1503,6 +1574,8 @@ function onRunEnd(agentId, result) {
   }
   // the lead finished its own turn; if a result arrived meanwhile, continue
   if (chains.has(agentId)) maybeContinue(agentId);
+  // an isolated task's agent finished: the task waits for the user to review the branch
+  { const a = getAgent(agentId); if (a?.wt) { const it = tasks.get(a.wt.team, a.wt.task); if (it?.wt) { tasks.update(a.wt.team, a.wt.task, { note: result.isError ? t("Stopped with an error on {branch}. Look at its chat, then merge or discard.", { branch: it.wt.branch }) : t("Ready for review on {branch}.", { branch: it.wt.branch }) }); broadcast({ type: "tasks", team: a.wt.team }); } } }
   setTimeout(() => notify(agentId, result), 50);
 }
 async function maybeContinue(leadId) {

@@ -43,6 +43,9 @@
         <button id="btn-notify" class="btn ghost icon-btn-top" type="button" data-i18n-attr="title" title="Notifications" aria-pressed="false">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5h-11zM6.5 14a1.5 1.5 0 0 0 3 0"/></svg>
         </button>
+        <button id="btn-practice" class="btn ghost icon-btn-top" data-i18n-attr="title,aria-label" title="Playground: write and run JavaScript, HTML and CSS" aria-label="Playground">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9 3 7 13"/></svg>
+        </button>
         <button id="btn-library" class="btn ghost" data-i18n-attr="title" title="Document library: analysis documents, data dictionaries, notes">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4zM9.5 1.5V5H13M6.5 8.5h4M6.5 11h4"/></svg>
           <span class="tb-l" data-i18n>Documents</span>
@@ -149,7 +152,7 @@
           <div class="a-row"><span id="a-status" class="status st-idle" data-i18n>Idle</span><button type="button" id="linked-docs" class="a-linked" hidden></button></div>
         </div>
         <div class="head-actions menu">
-          <button id="btn-attach" class="hbtn" type="button" data-i18n-attr="title" title="Give this chat a project folder: it becomes a project with a full team (developer, analyst, tester, reviewer)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg><span data-i18n>Turn into a project</span></button>
+          <button id="btn-toproject" class="hbtn" type="button" data-i18n-attr="title" title="Give this chat a project folder: it becomes a project with a full team (developer, analyst, tester, reviewer)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg><span data-i18n>Turn into a project</span></button>
           <button id="btn-focus" class="hbtn fx-btn" aria-pressed="false" data-i18n-attr="title,aria-label" title="Focus mode: chat in full width, projects on the left, 3D scene off (Ctrl+\)" aria-label="Focus mode">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
           </button>
@@ -334,6 +337,39 @@
   </div>
 </section>
 
+<section id="practice" class="overlay" hidden data-i18n-attr="aria-label" aria-label="Playground">
+  <header class="lib-top">
+    <button type="button" class="icon-btn" data-act="close" data-i18n-attr="title,aria-label" title="Back" aria-label="Back"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+    <div class="lib-title"><h2 data-i18n>Playground</h2><span data-i18n>Write JavaScript, HTML and CSS, run it and see the result. Runs in a sandbox, apart from your projects.</span></div>
+    <div></div>
+    <div class="rq-actions">
+      <button type="button" id="pr-hint" class="btn ghost sm" data-i18n-attr="title" title="Opens a chat with your code and asks for a hint, not the solution" data-i18n>Ask for a hint</button>
+      <button type="button" id="pr-clear" class="btn ghost sm" data-i18n>Clear output</button>
+      <button type="button" id="pr-stop" class="btn sm danger" hidden data-i18n>Stop</button>
+      <button type="button" id="pr-run" class="btn sm primary" data-i18n-attr="title" title="Run (Ctrl+Enter)" data-i18n>Run</button>
+    </div>
+  </header>
+  <div class="pr-body">
+    <aside class="pr-side">
+      <div class="pr-side-h"><span data-i18n>Files</span><button type="button" id="pr-new" class="icon-btn" aria-haspopup="menu" aria-expanded="false" data-i18n-attr="title,aria-label" title="New file" aria-label="New file"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button></div>
+      <div id="pr-newmenu" class="pr-newmenu" role="menu" hidden>
+        <button type="button" role="menuitem" data-kind="js"><b data-i18n>JavaScript</b><span data-i18n>Code and a console</span></button>
+        <button type="button" role="menuitem" data-kind="web"><b data-i18n>Web page</b><span data-i18n>HTML, CSS and JS with a live preview</span></button>
+      </div>
+      <div id="pr-files"></div>
+    </aside>
+    <div id="pr-main" class="pr-main" data-dock="right">
+      <div class="pr-edit"><div id="pr-tabs" class="pr-tabs" role="tablist" hidden></div><div id="pr-editor"></div>
+        <div class="pr-status"><span id="pr-pos"></span><span id="pr-lines"></span><span id="pr-lang"></span><span class="pr-zoom"><button type="button" id="pr-font-dn" data-i18n-attr="title,aria-label" title="Smaller text (Ctrl -)" aria-label="Smaller text">−</button><button type="button" id="pr-font" class="pr-font"></button><button type="button" id="pr-font-up" data-i18n-attr="title,aria-label" title="Larger text (Ctrl +)" aria-label="Larger text">+</button></span></div></div>
+      <div id="pr-split" class="pr-split" role="separator" tabindex="0" aria-valuemin="15" aria-valuemax="80" data-i18n-attr="title,aria-label" title="Drag to resize. Double-click to reset." aria-label="Resize the output"></div>
+      <div class="pr-outwrap">
+        <iframe id="pr-view" class="pr-view" sandbox="allow-scripts allow-forms allow-modals" data-i18n-attr="title" title="Page preview"></iframe>
+        <div class="pr-console"><div class="pr-console-h"><span data-i18n>Console</span><button type="button" id="pr-dock" class="icon-btn"></button></div><div id="pr-out" role="log" aria-live="polite"></div><p id="pr-empty"></p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section id="tasks" class="overlay" hidden data-i18n-attr="aria-label" aria-label="Tasks">
   <header class="lib-top">
     <button type="button" class="icon-btn" data-act="close" data-i18n-attr="title,aria-label" title="Back (Esc)" aria-label="Back"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
@@ -354,6 +390,11 @@
     </form>
     <div id="tk-board" class="tk-board"></div>
   </div>
+  <dialog id="dlg-wtdiff" class="dlg wtd">
+    <header><div><h3 id="wtd-title"></h3><small id="wtd-sum"></small></div><button type="button" class="icon-btn" onclick="this.closest('dialog').close()" data-i18n-attr="title,aria-label" title="Close" aria-label="Close"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></header>
+    <div id="wtd-body" class="wtd-body"></div>
+    <footer><button type="button" class="btn ghost sm" onclick="this.closest('dialog').close()" data-i18n>Close</button><button type="button" id="wtd-merge" class="btn primary sm" data-i18n>Merge</button></footer>
+  </dialog>
 </section>
 
 <section id="reqs" class="overlay" hidden data-i18n-attr="aria-label" aria-label="Scope">

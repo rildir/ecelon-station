@@ -12,7 +12,7 @@ const FILE = path.join(DATA_DIR, "agents.json");
 
 export const MODELS = [
   "sonnet", "opus", "fable", "haiku",                       // aliases: always the newest version
-  "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", // pinned versions
+  "claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", // pinned versions
 ];
 // A full model name can also be given for (older) models not in the list
 const validModel = (m) => typeof m === "string" && /^[A-Za-z0-9][A-Za-z0-9._\-\[\]]{1,63}$/.test(m);
@@ -73,7 +73,7 @@ export function getAgent(id) {
   return load().find((a) => a.id === id) || null;
 }
 
-export function addAgent({ name, cwd, model = "claude-sonnet-5-5", effort = "medium", permission = "acceptEdits", solo = false }) {
+export function addAgent({ name, cwd, model = "claude-sonnet-5-5", effort = "medium", permission = "acceptEdits", solo = false, wt = null }) {
   const list = load();
   if (!solo && list.some((a) => !a.solo && a.cwd === cwd)) throw new Error(t("There is already a project for this folder. To add a role to the team, open the project and use the + Role button."));
   if (!validModel(model)) throw new Error(t("Invalid model name."));
@@ -90,6 +90,7 @@ export function addAgent({ name, cwd, model = "claude-sonnet-5-5", effort = "med
     char: freeChar(list),
     sessionId: null,          // the session id Claude Code gives after the first conversation
     ...(solo ? { solo: true } : {}), // a free chat: one assistant, no team, its own scratch folder (see /api/chats)
+    ...(wt ? { wt } : {}),            // works on one task of a project, in that task's own worktree: { team, task, branch }
     createdAt: new Date().toISOString(),
     lastUsedAt: null,
     totalCostUsd: 0,
@@ -196,6 +197,7 @@ export function resetSession(id) {
 // A free chat becomes a project: it takes the folder, gets the project's name and (through ensureFullTeams) a team.
 // The Claude Code session belongs to the old folder, so a new one starts; what was said stays in the log.
 export function attachChat(id, cwd) {
+  if (getAgent(id)?.wt) throw new Error(t("This chat works on a task's own branch; it cannot become a project."));
   const list = load();
   const a = list.find((x) => x.id === id);
   if (!a) throw new Error(t("Agent not found."));

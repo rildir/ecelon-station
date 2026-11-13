@@ -43,6 +43,12 @@ if (has("--demo")) { env.MOCK = "1"; env.ECELON_DEMO = "1"; }
 if (has("--watch")) env.ECELON_DEV = "1"; // dev mode: the browser reloads itself when public/ changes
 if (val("--lang")) env.ECELON_LANG = val("--lang");
 if (val("--data")) env.ECELON_DATA = path.resolve(val("--data"));
+// The demo keeps its sample projects and fake runs in a folder of its own, so trying it never mixes them into
+// the projects you use for real (and real projects never see the fake agents).
+else if (has("--demo") && !process.env.ECELON_DATA) {
+  const { homedir } = await import("node:os");
+  env.ECELON_DATA = /[\\/]node_modules[\\/]/.test(root) ? path.join(homedir(), ".ecelon-station-demo") : path.join(root, "data-demo");
+}
 
 const nodeArgs = has("--watch") ? ["--watch", path.join(root, "server", "index.js")] : [path.join(root, "server", "index.js")];
 const child = spawn(process.execPath, nodeArgs, { env, stdio: "inherit" });
