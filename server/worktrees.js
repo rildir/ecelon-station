@@ -25,7 +25,7 @@ async function repoOf(cwd) {
   let top;
   try { top = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim(); } catch { throw new Error(t("This project is not a git repository")); }
   try { await git(top, ["rev-parse", "--verify", "HEAD"]); } catch { throw new Error(t("The repository has no commit yet; make a first commit, then start the task again.")); }
-  const rel = path.relative(fs.realpathSync(top), fs.realpathSync(cwd));
+  const rel = path.relative(fs.realpathSync.native(top), fs.realpathSync.native(cwd)); // .native: the JS version keeps Windows 8.3 short names (RUNNER~1) that git's path does not have
   return { top, rel: rel.startsWith("..") ? "" : rel };
 }
 
