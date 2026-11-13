@@ -39,6 +39,9 @@ id_rsa*
 secrets*
 credentials*
 
+# the demo's own data folder (npm run demo)
+data-demo/
+
 # desktop build output and the Node binary bundled into it
 dist/
 build/node/

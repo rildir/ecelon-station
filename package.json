@@ -1,18 +1,22 @@
 {
   "name": "ecelon-station",
-  "version": "0.1.0",
-  "description": "A control room for Claude Code agent teams: every project is a room in an isometric office, every role a character.",
+  "version": "0.2.0",
+  "description": "Claude Code agents that have to prove their work: spec → requirements → code → verification by a different agent, parallel tasks on their own git branches, proof reports. Local, MIT.",
   "keywords": [
-    "claude-code",
-    "claude",
     "agents",
-    "multi-agent",
     "ai",
-    "developer-tools",
+    "ai-agents",
+    "claude",
+    "claude-code",
     "dashboard",
+    "developer-tools",
+    "git-worktree",
     "isometric",
+    "multi-agent",
     "requirements",
-    "traceability"
+    "requirements-traceability",
+    "traceability",
+    "verification"
   ],
   "license": "MIT",
   "repository": {

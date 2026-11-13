@@ -139,7 +139,8 @@ const teamKey = (a) => a.team || a.id;
 const teamOf = (a) => agents.filter((x) => teamKey(x) === teamKey(a)).sort((x, y) => (meta.roles?.[roleOf(x)]?.order ?? 9) - (meta.roles?.[roleOf(y)]?.order ?? 9));
 const agentLabel = (a) => (teamOf(a).length > 1 ? `${a.name} · ${roleLabel(a)}` : a.name);
 const teamOrder = () => [...new Set(agents.filter((a) => !a.solo).map(teamKey))]; // projects only; free chats are listed apart (chatList)
-const chatList = () => agents.filter((a) => a.solo).sort((a, b) => String(b.lastUsedAt || b.createdAt || "").localeCompare(String(a.lastUsedAt || a.createdAt || "")));
+// a task's own-branch agent is reached from the task board, not listed with the chats
+const chatList = () => agents.filter((a) => a.solo && !a.wt).sort((a, b) => String(b.lastUsedAt || b.createdAt || "").localeCompare(String(a.lastUsedAt || a.createdAt || "")));
 const leadOf = (a) => { const t = teamOf(a); return t.find((x) => roleOf(x) === "dev") || t[0]; };
 const projects = () => teamOrder().map((t) => leadOf(agents.find((x) => teamKey(x) === t)));
 // Turkish case suffixes for names in sentences (dative "Testçi'ye", ablative "Analist'ten"); other languages return the word as is
@@ -247,6 +248,7 @@ const tasksUI = createTasks({
   api, toast, confirmBox,
   project: (a) => ({ team: teamKey(a), name: leadOf(a).name, roles: teamOf(a).map((m) => ({ id: roleOf(m), label: roleLabel(m) })) }),
   roleIcon: (id) => ROLE_ICON[id] || "",
+  openAgent: (id) => selectAgent(id),
   onOpen: () => { station.pause(true); closePops(); },
   onClose: () => { station.pause(false); renderTasksBadge(); },
 });
@@ -879,6 +881,11 @@ async function renameChat(id) {
 // A chat has no folder of the user's behind it, so deleting it is final: say so, then remove it with its transcript.
 async function deleteChat(id) {
   const a = agents.find((x) => x.id === id); if (!a) return;
+  if (a.wt) { // the agent of an isolated task: deleting it means throwing the task's branch away
+    if (!(await confirmBox({ title: t("Discard {branch}?", { branch: a.wt.branch }), body: t("The task's copy, its branch and its chat are deleted; your project is not touched. The task goes back to To do."), ok: t("Discard"), danger: true }))) return;
+    if (await tasksUI.discardFor(a.wt.team, a.wt.task)) { if (selectedId === a.id) closePanel(); await refresh(); }
+    return;
+  }
   if (!(await confirmBox({ title: t("Delete {name}?", { name: a.name }), body: t("The chat and everything written in it are deleted. This cannot be undone."), ok: t("Delete chat"), danger: true }))) return;
   try { await api(`/api/agents/${a.id}`, { method: "DELETE" }); } catch (err) { toast(err.message, "bad"); return; }
   if (selectedId === a.id) closePanel();
@@ -1252,7 +1259,7 @@ const permOf = (a) => a.permission || "acceptEdits";
 function fillHeader(a) {
   if (!$("#a-name").isContentEditable) { $("#a-name").textContent = a.name; $("#a-name").title = t("{name} (click to rename)", { name: a.name }); }
   $("#a-path").textContent = shortPath(a.cwd); $("#a-path").title = a.cwd;
-  $("#btn-remove").textContent = a.solo ? t("Delete chat") : t("Remove project from the station");
+  $("#btn-remove").textContent = a.wt ? t("Discard the task's branch") : a.solo ? t("Delete chat") : t("Remove project from the station");
   $("#a-portrait").style.backgroundImage = portraitUrl(a.char ?? indexOf(a.id));
   $("#model-name").textContent = modelName(a.model);
   $("#effort-name").textContent = effortName(a.effort); $("#effort-btn").title = `${t("Effort: {effort}.", { effort: effortName(a.effort) })} ${EFFORT_DESC[a.effort] || ""}`;
@@ -1340,7 +1347,7 @@ async function selectAgent(id) {
   if (!prev || teamKey(prev) !== teamKey(a)) restoreDraft(teamKey(a));
   if (unread.delete(teamKey(a))) { saveUnread(); renderList(); }
   lastPick.set(teamKey(a), id);
-  $("#panel-empty").hidden = true; $("#panel-agent").hidden = false; document.body.classList.add("has-agent"); document.body.classList.toggle("solo-chat", !!a.solo); if (proView) renderBoard(); renderChats();
+  $("#panel-empty").hidden = true; $("#panel-agent").hidden = false; document.body.classList.add("has-agent"); document.body.classList.toggle("solo-chat", !!a.solo && !a.wt); document.body.classList.toggle("wt-chat", !!a.wt); if (proView) renderBoard(); renderChats();
   fillHeader(a);
   await loadChat();
 }
@@ -1396,7 +1403,7 @@ async function loadChat(more = false) {
 function closePanel() {
   if (current()) saveDraft(teamKey(current()));
   selectedId = null; station.select(null); closePops();
-  $("#panel-agent").hidden = true; $("#panel-empty").hidden = false; document.body.classList.remove("has-agent", "solo-chat"); if (proView) renderBoard(); renderChats();
+  $("#panel-agent").hidden = true; $("#panel-empty").hidden = false; document.body.classList.remove("has-agent", "solo-chat", "wt-chat"); if (proView) renderBoard(); renderChats();
 }
 
 // ---- shared dropdown (model / effort / permission) — opens above the message box

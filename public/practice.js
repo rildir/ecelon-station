@@ -6,6 +6,7 @@ import { t } from "./i18n.js";
 import { loadMonaco } from "./editor.js";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const FONT_KEY = "ecelon.practiceFont", FONT_MIN = 8, FONT_MAX = 40, FONT_DEFAULT = 14;
 const KEY = "ecelon.practice", MAX_LINES = 400, SYNC_MS = 3000, TOTAL_MS = 15000;
 
 // ---- shared by both runners: how values are printed, and a console that reports through out(kind, text)
@@ -149,7 +150,7 @@ export function createPractice(ctx) {
   const models = new Map(); // "fileId:part" -> monaco model
   const sample = () => `// ${t("Write JavaScript here and press Ctrl+Enter to run it.")}\nconst people = [{ name: "Ada", age: 36 }, { name: "Linus", age: 28 }];\nconsole.log(people.filter((p) => p.age > 30).map((p) => p.name));\n`;
   const webSample = () => ({ html: `<h1>${t("Hello")}</h1>\n<button id="btn">${t("Click me")}</button>\n<p id="out"></p>\n`, css: `body { font-family: system-ui, sans-serif; padding: 24px; }\nbutton { padding: 8px 14px; border: 0; border-radius: 6px; background: #4d7bff; color: #fff; cursor: pointer; }\n`, js: `let n = 0;\ndocument.querySelector("#btn").addEventListener("click", () => {\n  n++;\n  document.querySelector("#out").textContent = n;\n  console.log("click", n);\n});\n` });
-  const fresh = () => ({ files: [{ id: "f1", name: "practice-1.js", kind: "js", code: sample() }], active: "f1", ui: {} });
+  const fresh = () => ({ files: [{ id: "f1", name: "script-1.js", kind: "js", code: sample() }], active: "f1", ui: {} });
   let state = fresh();
   try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && Array.isArray(s.files) && s.files.length) state = s; } catch { /* first time, or storage is off */ }
   state.ui = state.ui || {}; for (const f of state.files) { f.kind = f.kind === "web" ? "web" : "js"; if (f.kind === "web") f.part = f.part || "html"; }
@@ -269,10 +270,47 @@ export function createPractice(ctx) {
     if (ed) { ed.layout(); ed.focus(); return; }
     try { monaco = await loadMonaco(); } catch (e) { $("#pr-editor").innerHTML = `<div class="lib-empty"><b>${esc(t("Could not load the editor"))}</b><p>${esc(e.message)}</p></div>`; return; }
     if (ed || root.hidden) return;
-    ed = monaco.editor.create($("#pr-editor"), { model: null, theme: "ecelon", automaticLayout: true, fontFamily: "JetBrains Mono, Consolas, monospace", fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false, tabSize: 2, padding: { top: 12 }, unicodeHighlight: { ambiguousCharacters: false } });
+    ed = monaco.editor.create($("#pr-editor"), { model: null, theme: "ecelon", automaticLayout: true, fontFamily: "JetBrains Mono, Consolas, monospace", fontSize: savedFont(), mouseWheelZoom: false, minimap: { enabled: false }, scrollBeyondLastLine: false, tabSize: 2, padding: { top: 12 }, unicodeHighlight: { ambiguousCharacters: false } });
     ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runCode());
+    // text size: Ctrl + wheel, Ctrl +/-, Ctrl 0 — like an IDE; the size is shown in the status bar and remembered
+    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Equal, () => zoom(1));
+    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.NumpadAdd, () => zoom(1));
+    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Minus, () => zoom(-1));
+    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.NumpadSubtract, () => zoom(-1));
+    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit0, () => setFont(FONT_DEFAULT));
+    ed.onDidChangeCursorPosition(renderStatus);
+    ed.onDidChangeModel(renderStatus);
     showActive();
   }
+  // ---- text size and the status bar under the editor
+  function savedFont() { try { const v = Number(localStorage.getItem(FONT_KEY)); if (v >= FONT_MIN && v <= FONT_MAX) return v; } catch { /* storage off */ } return FONT_DEFAULT; }
+  const fontNow = () => (ed ? ed.getOption(monaco.editor.EditorOption.fontSize) : savedFont());
+  function setFont(px) {
+    const v = Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(px)));
+    if (ed && v !== fontNow()) ed.updateOptions({ fontSize: v });
+    try { localStorage.setItem(FONT_KEY, String(v)); } catch { /* storage off */ }
+    renderStatus();
+  }
+  const zoom = (d) => setFont(fontNow() + d);
+  function renderStatus() {
+    if (!ed) return;
+    const pos = ed.getPosition(), m = ed.getModel();
+    $("#pr-pos").textContent = pos ? t("Ln {l}, Col {c}", { l: pos.lineNumber, c: pos.column }) : "";
+    $("#pr-lang").textContent = m ? ({ javascript: "JavaScript", html: "HTML", css: "CSS" }[m.getLanguageId()] || m.getLanguageId()) : "";
+    $("#pr-lines").textContent = m ? t("{n} {n|line|lines}", { n: m.getLineCount() }) : "";
+    $("#pr-font").textContent = fontNow() + " px"; $("#pr-font").classList.toggle("changed", fontNow() !== FONT_DEFAULT);
+    $("#pr-font").title = t("Text size. Ctrl + mouse wheel or Ctrl +/- changes it; click to reset to {n} px.", { n: FONT_DEFAULT });
+  }
+  // Ctrl + wheel over the editor: the editor's text grows or shrinks, not the whole window
+  $("#pr-editor").addEventListener("wheel", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || !ed) return;
+    e.preventDefault(); e.stopPropagation();
+    zoom(e.deltaY < 0 ? 1 : -1);
+  }, { passive: false, capture: true });
+  $("#pr-font").onclick = () => { setFont(FONT_DEFAULT); ed?.focus(); };
+  $("#pr-font-dn").onclick = () => { zoom(-1); ed?.focus(); };
+  $("#pr-font-up").onclick = () => { zoom(1); ed?.focus(); };
+
   function close() { stop(); clearTimeout(liveT); root.hidden = true; ctx.onClose?.(); }
 
   $("#pr-run").onclick = () => runCode();
@@ -280,7 +318,7 @@ export function createPractice(ctx) {
   $("#pr-clear").onclick = () => { $("#pr-out").textContent = ""; lines = 0; $("#pr-empty").hidden = false; };
   $("#pr-tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-part]"); if (!b) return; const f = active(); f.part = b.dataset.part; persist(); $("#pr-tabs").querySelectorAll("button").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", String(on)); }); ed?.setModel(modelFor(f, f.part)); ed?.focus(); });
   const addFile = (kind) => {
-    const ext = kind === "web" ? "html" : "js", stem = kind === "web" ? "page" : "practice";
+    const ext = kind === "web" ? "html" : "js", stem = kind === "web" ? "page" : "script";
     let n = 1; while (state.files.some((f) => f.name === `${stem}-${n}.${ext}`)) n++;
     const f = { id: "f" + Date.now().toString(36), name: `${stem}-${n}.${ext}`, kind, ...(kind === "web" ? { part: "html", ...webSample() } : { code: "" }) };
     state.files.push(f); $("#pr-newmenu").hidden = true; select(f.id);
@@ -291,13 +329,13 @@ export function createPractice(ctx) {
   $("#pr-hint").onclick = () => {
     const f = active(), body = f.kind === "web" ? PARTS.map(([id, , lang]) => (f[id] || "").trim() ? "```" + (lang === "javascript" ? "js" : lang) + "\n" + f[id].trimEnd() + "\n```" : "").filter(Boolean).join("\n\n") : (f.code || "").trim() ? "```js\n" + f.code.trimEnd() + "\n```" : "";
     if (!body) return ctx.toast(t("Write some code first"), "bad");
-    const ask = f.kind === "web" ? t("I am practising HTML, CSS and JavaScript and I am stuck. Do not give me the solution: give me one hint, and tell me where to look.") : t("I am practising JavaScript and I am stuck. Do not give me the solution: give me one hint, and tell me which line to look at.");
+    const ask = f.kind === "web" ? t("I am stuck on this HTML, CSS and JavaScript. Do not give me the solution: give me one hint, and tell me where to look.") : t("I am stuck on this JavaScript. Do not give me the solution: give me one hint, and tell me which line to look at.");
     const err = lastError; close(); ctx.askHint(`${ask}\n\n${body}${err ? `\n\n${t("Error")}: ${err}` : ""}`);
   };
   $("#pr-files").addEventListener("click", async (e) => {
     const row = e.target.closest(".pr-file"); if (!row) return; const f = state.files.find((x) => x.id === row.dataset.id); if (!f) return;
     const act = e.target.closest("[data-act]")?.dataset.act;
-    if (act === "ren") { const name = (await ctx.prompt(t("Rename file"), "practice.js", f.name, { ok: t("Save") }))?.trim(); if (name) { f.name = name.slice(0, 60); renderFiles(); persist(); } return; }
+    if (act === "ren") { const name = (await ctx.prompt(t("Rename file"), "script.js", f.name, { ok: t("Save") }))?.trim(); if (name) { f.name = name.slice(0, 60); renderFiles(); persist(); } return; }
     if (act === "del") {
       if (!(await ctx.confirmBox({ title: t("Delete {name}?", { name: f.name }), body: t("The file is deleted from this browser. This cannot be undone."), ok: t("Delete"), danger: true }))) return;
       for (const [k, m] of models) if (k.startsWith(f.id + ":")) { if (ed?.getModel() === m) ed.setModel(null); m.dispose(); models.delete(k); }
