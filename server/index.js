@@ -203,13 +203,21 @@ app.get("/api/meta", (_req, res) => res.json({ build: BOOT_AT, stale: isStale(),
 const USAGE_FILE = dataPath("usage.json");
 let usage = {};
 try { usage = JSON.parse(fs.readFileSync(USAGE_FILE, "utf8")); } catch {}
+const resetAtMs = (t) => (t ? (t < 1e12 ? t * 1000 : t) : 0);
+// A window that has already reset says nothing about now: drop it rather than show its old figure
+function dropExpired() { for (const [k, v] of Object.entries(usage)) if (v?.resetsAt && resetAtMs(v.resetsAt) < Date.now()) delete usage[k]; }
+dropExpired();
 function saveUsage(info) {
   if (!info?.kind) return;
-  usage[info.kind] = { ...usage[info.kind], ...Object.fromEntries(Object.entries(info).filter(([, v]) => v !== null)), seenAt: Date.now() };
+  // Each event replaces what was known about its window. Claude Code sends the percentage only when it has one
+  // (typically near a limit); an event without it means "allowed, no figure", so an older figure must not stay.
+  // (Before this, a 99% from an earlier window was kept under the new window's reset time.)
+  usage[info.kind] = { ...Object.fromEntries(Object.entries(info).filter(([, v]) => v !== null)), seenAt: Date.now() };
+  dropExpired();
   try { mkdirPrivate(path.dirname(USAGE_FILE)); writePrivate(USAGE_FILE, JSON.stringify(usage, null, 2)); } catch {}
   broadcast({ type: "usage", usage });
 }
-app.get("/api/usage", (_req, res) => res.json(usage));
+app.get("/api/usage", (_req, res) => { dropExpired(); res.json(usage); });
 
 // ---------- images ----------
 const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
