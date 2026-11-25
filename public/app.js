@@ -4,6 +4,7 @@ import { sfx } from "./sounds.js";
 import { createReqs } from "./reqs.js";
 import { createTasks } from "./tasks.js";
 import { createPractice } from "./practice.js";
+import { createStudy } from "./study.js";
 import { createGit } from "./gitui.js";
 import { createEditor } from "./editor.js";
 import { createRuns } from "./runui.js";
@@ -261,6 +262,9 @@ const practiceUI = createPractice({
   onClose: () => { station.pause(false); },
 });
 $("#btn-practice").onclick = () => practiceUI.open();
+// JS Study: questions, coding tasks and notes; its content and progress are kept in data/study.json
+const studyUI = createStudy({ api, toast, confirmBox, onOpen: () => { station.pause(true); closePops(); }, onClose: () => { station.pause(false); } });
+$("#btn-study").onclick = () => studyUI.open();
 let tasksSeq = 0;
 async function renderTasksBadge(a = current()) {
   if (!a) return; const seq = ++tasksSeq;
@@ -1463,7 +1467,7 @@ document.addEventListener("keydown", (e) => {
   // in the message box Esc only leaves focus (does not close the panel; what you typed stays)
   if (e.key === "Escape" && e.target === $("#prompt") && $("#mention-pop").hidden) { $("#prompt").blur(); e.preventDefault(); return; }
   // e.defaultPrevented: an upper layer (Scope, Git, editor, documents) already used Esc → do not close the panel
-  if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]") || lib.isOpen || reqsUI.isOpen || tasksUI.isOpen || gitUI.isOpen || edUI.isOpen || runUI.isOpen || practiceUI.isOpen) return;
+  if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]") || lib.isOpen || reqsUI.isOpen || tasksUI.isOpen || gitUI.isOpen || edUI.isOpen || runUI.isOpen || practiceUI.isOpen || studyUI.isOpen) return;
   if ([...document.querySelectorAll(".pop")].some((p) => !p.hidden)) closePops(); else if (selectedId) closePanel();
 });
 

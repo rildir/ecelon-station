@@ -27,6 +27,7 @@ import { proofReport } from "./report.js";
 import { audit, readAudit, verifyChain, auditCsv, KINDS as AUDIT_KINDS } from "./audit.js";
 const APP_VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version; } catch { return ""; } })();
 import { libraryRouter, describeDocs, referenceLines, linkedDocIds, forgetAgent, docsTextFor } from "./library.js";
+import { studyRouter } from "./study.js";
 import { dataPath, LOGS, PUBLIC, rootPath, pkgDir, mkdirPrivate, writePrivate } from "./paths.js";
 
 const PORT = Number(process.env.PORT || 4777);
@@ -169,6 +170,7 @@ function setStatus(agentId, s, extra = {}) {
 }
 
 // ---------- REST ----------
+app.use("/api/study", studyRouter()); // JS Study: questions, tasks and progress (data/study.json)
 app.use("/api/library", libraryRouter({ broadcast: (m) => { broadcast(m); if (m?.type === "library") syncAllCoverage(); } }));
 
 // The server is one long-lived process: closing the window does not stop it, and reopening the shortcut finds it
