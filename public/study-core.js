@@ -124,7 +124,7 @@ export function compareOutput(actual, expected) {
 
 // ---------------------------------------------------------------- packs: checking and merging
 const ID = /^[A-Za-z0-9_.-]{1,80}$/;
-const LIMITS = { list: 3000, title: 200, code: 6000, ask: 300, option: 300, why: 1500, desc: 4000, line: 400, lines: 100, hint: 600, taskHints: 20, group: 60, summary: 900, point: 320, points: 12, example: 3000, mistake: 700, say: 1800, talks: 10, talkAsk: 300, talkAnswer: 1800 };
+const LIMITS = { list: 3000, title: 200, code: 6000, ask: 300, option: 300, why: 1500, desc: 4000, line: 400, lines: 100, hint: 600, taskHints: 20, group: 60, summary: 900, point: 320, points: 12, example: 3000, mistake: 700, say: 1800, talks: 10, talkAsk: 300, talkAnswer: 1800, steps: 16, stepText: 1200, stepCode: 2500, stepTitle: 120 };
 const isStr = (x) => typeof x === "string";
 const norm = (s) => String(s).replace(/\r\n/g, "\n");
 const emptyContent = () => ({ topics: [], hints: [], questions: [], tasks: [] });
@@ -159,6 +159,9 @@ export function validatePack(raw, existing = emptyContent(), t = plain) {
     text("summary", LIMITS.summary); text("example", LIMITS.example); text("mistake", LIMITS.mistake); text("say", LIMITS.say);
     if (l.points !== undefined) { if (Array.isArray(l.points) && l.points.length <= LIMITS.points && l.points.every((x) => isStr(x) && x.trim() && x.length <= LIMITS.point)) out.points = l.points.map(norm); else bad(where, t("lesson points must be a list of at most {n} short texts", { n: LIMITS.points })); }
     if (l.talk !== undefined) { if (Array.isArray(l.talk) && l.talk.length <= LIMITS.talks && l.talk.every((x) => x && typeof x === "object" && isStr(x.ask) && x.ask.trim() && x.ask.length <= LIMITS.talkAsk && isStr(x.answer) && x.answer.trim() && x.answer.length <= LIMITS.talkAnswer)) out.talk = l.talk.map((x) => ({ ask: norm(x.ask), answer: norm(x.answer) })); else bad(where, t("lesson talk must be a list of at most {n} items, each with ask and answer", { n: LIMITS.talks })); }
+    if (l.steps !== undefined) { const okStep = (x) => x && typeof x === "object" && isStr(x.text) && x.text.trim() && x.text.length <= LIMITS.stepText && (x.code === undefined || (isStr(x.code) && x.code.length <= LIMITS.stepCode)) && (x.title === undefined || (isStr(x.title) && x.title.length <= LIMITS.stepTitle));
+      if (Array.isArray(l.steps) && l.steps.length <= LIMITS.steps && l.steps.every(okStep)) out.steps = l.steps.map((x) => ({ ...(x.title?.trim() ? { title: norm(x.title).trim() } : {}), text: norm(x.text), ...(x.code?.trim() ? { code: norm(x.code).replace(/\s+$/, "") } : {}) }));
+      else bad(where, t("lesson steps must be a list of at most {n} items, each with a text and an optional code", { n: LIMITS.steps })); }
     return out;
   };
   const pid = ids("topics");
@@ -230,6 +233,7 @@ export const SCHEMA_TEXT = `Write a JSON content pack for a JavaScript study too
   "version": 1,
   "topics":    [ { "id": "closure", "title": "Closure", "status": "yeni", "group": "Scope and functions",
                    "lesson": { "summary": "3-5 sentences", "points": ["a thing to know"], "example": "console.log(1);",
+                               "steps": [ { "title": "optional", "text": "one idea, built on the step before", "code": "optional runnable code" } ],
                                "mistake": "the common mistake", "say": "how to say it aloud in one paragraph",
                                "talk": [ { "ask": "Explain closures.", "answer": "a model answer" } ] } } ],
   "hints":     [ { "topic": "closure", "text": "one short memorable sentence" } ],

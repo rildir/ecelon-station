@@ -6,6 +6,8 @@ import fs from "node:fs";
 import { t } from "./i18n.js";
 import { dataPath, mkdirPrivate, writePrivate } from "./paths.js";
 import { validatePack, mergePack, emptyProgress } from "../public/study-core.js";
+import { oneShot } from "./runner.js";
+import { tutorPrompt, pickJson, cleanGrade, cleanQuestions, TUTOR_MODEL } from "./study-tutor.js";
 
 const FILE = dataPath("study.json");
 const CAP = { answers: 20000, attempts: 5000, sessions: 5000, talks: 5000, notes: 500, drafts: 300 };
@@ -69,6 +71,24 @@ export function studyRouter() {
       d.progress.drafts = Object.fromEntries(Object.entries(b.drafts).filter(([k]) => ID.test(k)).slice(0, CAP.drafts).map(([k, v]) => [k, { code: text(v?.code, 20000), tahmin: text(v?.tahmin, 2000) }]));
     }
     write(d); res.json({ ok: true });
+  });
+
+  // the tutor: one question to Claude Code, without tools and outside any project (it reads and writes nothing)
+  let busy = 0;
+  r.post("/tutor", async (req, res) => {
+    const b = req.body || {}, kind = String(b.kind || ""), d = read();
+    const prompt = tutorPrompt(kind, d.content, b, b.lang === "tr" ? "tr" : "en");
+    if (!prompt) return res.status(400).json({ error: t("The tutor needs a question, a task or an answer to look at.") });
+    if (busy >= 2) return res.status(429).json({ error: t("The tutor is still answering. Try again in a moment.") });
+    busy++;
+    try {
+      mkdirPrivate(dataPath());
+      const out = await oneShot(prompt, { cwd: dataPath(), model: TUTOR_MODEL, timeout: 150000 });
+      if (kind === "talk") { const g = cleanGrade(pickJson(out)); return g ? res.json({ grade: g }) : res.status(502).json({ error: t("The tutor's answer could not be read. Try again.") }); }
+      if (kind === "more") { const qs = cleanQuestions(pickJson(out), String(b.topic)); return qs.length ? res.json({ questions: qs }) : res.status(502).json({ error: t("The tutor's answer could not be read. Try again.") }); }
+      res.json({ text: out.slice(0, 4000) });
+    } catch (e) { res.status(502).json({ error: t("The tutor could not answer: {msg}", { msg: e.message }) }); }
+    finally { busy--; }
   });
 
   // start the progress over (the content and the notes stay)
