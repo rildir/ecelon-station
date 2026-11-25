@@ -4,6 +4,7 @@ import { sfx } from "./sounds.js";
 import { createReqs } from "./reqs.js";
 import { createTasks } from "./tasks.js";
 import { createPractice } from "./practice.js";
+import { createStudy } from "./study.js";
 import { createGit } from "./gitui.js";
 import { createEditor } from "./editor.js";
 import { createRuns } from "./runui.js";
@@ -261,6 +262,9 @@ const practiceUI = createPractice({
   onClose: () => { station.pause(false); },
 });
 $("#btn-practice").onclick = () => practiceUI.open();
+// JS Study: questions, coding tasks and notes; its content and progress are kept in data/study.json
+const studyUI = createStudy({ api, toast, confirmBox, onOpen: () => { station.pause(true); closePops(); }, onClose: () => { station.pause(false); } });
+$("#btn-study").onclick = () => studyUI.open();
 let tasksSeq = 0;
 async function renderTasksBadge(a = current()) {
   if (!a) return; const seq = ++tasksSeq;
@@ -1463,7 +1467,7 @@ document.addEventListener("keydown", (e) => {
   // in the message box Esc only leaves focus (does not close the panel; what you typed stays)
   if (e.key === "Escape" && e.target === $("#prompt") && $("#mention-pop").hidden) { $("#prompt").blur(); e.preventDefault(); return; }
   // e.defaultPrevented: an upper layer (Scope, Git, editor, documents) already used Esc → do not close the panel
-  if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]") || lib.isOpen || reqsUI.isOpen || tasksUI.isOpen || gitUI.isOpen || edUI.isOpen || runUI.isOpen || practiceUI.isOpen) return;
+  if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]") || lib.isOpen || reqsUI.isOpen || tasksUI.isOpen || gitUI.isOpen || edUI.isOpen || runUI.isOpen || practiceUI.isOpen || studyUI.isOpen) return;
   if ([...document.querySelectorAll(".pop")].some((p) => !p.hidden)) closePops(); else if (selectedId) closePanel();
 });
 
@@ -1500,16 +1504,18 @@ function fmtReset(at) {
   return d.toDateString() === now.toDateString() ? t("today {time}", { time }) : d.toLocaleDateString(locale(), { weekday: "long" }) + " " + time;
 }
 const barCls = (u) => (u >= 0.9 ? "full" : u >= 0.7 ? "warn" : "");
+// only figures that still describe the current window: an expired one is not shown
+const liveUsage = () => Object.entries(usage).filter(([, v]) => typeof v.utilization === "number" && !(v.resetsAt && resetMs(v.resetsAt) < Date.now()));
 function renderUsage() {
   const btn = $("#usage-btn");
-  const rows = Object.entries(usage).filter(([, v]) => typeof v.utilization === "number");
+  const rows = liveUsage();
   btn.hidden = !rows.length; if (!rows.length) return;
   const show = rows.filter(([k]) => k === "five_hour" || k === "seven_day");
   btn.innerHTML = (show.length ? show : rows).map(([k, v]) => `<span class="u-mini">${k === "five_hour" ? t("5 h") : k === "seven_day" ? t("Week") : escHtml(k)}<span class="u-bar ${barCls(v.utilization)}"><i style="width:${Math.round(v.utilization * 100)}%"></i></span>${t("{n}%", { n: Math.round(v.utilization * 100) })}</span>`).join("");
 }
 function openUsage(btn) {
   const pop = $("#usage-pop");
-  const rows = Object.entries(usage).filter(([, v]) => typeof v.utilization === "number");
+  const rows = liveUsage();
   pop.innerHTML = `<h4>${t("Usage")}</h4>` + rows.map(([k, v]) => `<div class="u-row"><div class="u-head"><span>${escHtml(USAGE_NAMES[k] || k)}</span><span>${t("{n}%", { n: Math.round(v.utilization * 100) })}</span></div>
     <span class="u-bar ${barCls(v.utilization)}"><i style="width:${Math.round(v.utilization * 100)}%"></i></span>
     <small>${v.resetsAt ? t("Resets: {when}", { when: fmtReset(v.resetsAt) }) : ""}${v.status === "rejected" ? " · " + t("limit reached") : ""}</small></div>`).join("") +
@@ -2752,6 +2758,7 @@ $("#bc-form").addEventListener("submit", async (e) => {
 meta = await api("/api/meta");
 if (!meta.build) staleBar("old"); else if (meta.stale) staleBar("stale");
 usage = await api("/api/usage").catch(() => ({})); renderUsage();
+setInterval(renderUsage, 60000); // a window that resets while the page is open disappears without waiting for the next answer
 $("#mode-badge").textContent = meta.mock ? t("Demo mode") : "";
 document.body.style.setProperty("--l-new", JSON.stringify(t("new")));
 if (meta.claudeMissing) { const w = $("#cli-warn"); w.textContent = meta.claudeMissing; w.hidden = false; }

@@ -72,7 +72,7 @@ self.onmessage = async (ev) => {
 `;
 // ---- the sandboxed frame: starts the worker, relays its messages, stops it when told. No network except https
 // (so fetch to a public API can be practised); the station itself is out of reach either way.
-const FRAME = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; worker-src blob:; connect-src https:">
+export const FRAME = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; worker-src blob:; connect-src https:">
 <script>
 let w = null; const src = ${JSON.stringify(WORKER)};
 addEventListener("message", (ev) => {

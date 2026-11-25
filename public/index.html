@@ -46,6 +46,9 @@
         <button id="btn-practice" class="btn ghost icon-btn-top" data-i18n-attr="title,aria-label" title="Playground: write and run JavaScript, HTML and CSS" aria-label="Playground">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9 3 7 13"/></svg>
         </button>
+        <button id="btn-study" class="btn ghost icon-btn-top" data-i18n-attr="title,aria-label" title="JS Study: questions, coding tasks and notes for JavaScript" aria-label="JS Study">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h4A2 2 0 0 1 8 5.5v8a2 2 0 0 0-2-2H2zM14 3.5h-4A2 2 0 0 0 8 5.5v8a2 2 0 0 1 2-2h4z"/></svg>
+        </button>
         <button id="btn-library" class="btn ghost" data-i18n-attr="title" title="Document library: analysis documents, data dictionaries, notes">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4zM9.5 1.5V5H13M6.5 8.5h4M6.5 11h4"/></svg>
           <span class="tb-l" data-i18n>Documents</span>
@@ -368,6 +371,50 @@
       </div>
     </div>
   </div>
+</section>
+
+<section id="study" class="overlay" hidden data-i18n-attr="aria-label" aria-label="JS Study">
+  <header class="lib-top">
+    <button type="button" class="icon-btn" data-act="close" data-i18n-attr="title,aria-label" title="Back (Esc)" aria-label="Back (Esc)"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
+    <div class="lib-title"><h2 data-i18n>JS Study</h2><span data-i18n>Questions, coding tasks and notes. Your progress stays on this computer.</span></div>
+    <div id="st-tabs" class="tk-filter" role="tablist">
+      <button type="button" role="tab" class="chip on" data-tab="map" aria-selected="true" data-i18n>Topics</button>
+      <button type="button" role="tab" class="chip" data-tab="quiz" aria-selected="false" data-i18n>Quiz</button>
+      <button type="button" role="tab" class="chip" data-tab="code" aria-selected="false" data-i18n>Code</button>
+      <button type="button" role="tab" class="chip" data-tab="tips" aria-selected="false" data-i18n>Cheat sheet</button>
+    </div>
+    <div class="rq-actions"><button type="button" id="st-import" class="btn ghost sm" data-i18n>Import pack</button></div>
+  </header>
+  <div class="st-body">
+    <div id="st-map" class="st-pane"></div>
+    <div id="st-quiz" class="st-pane" hidden></div>
+    <div id="st-code" class="st-pane st-codepane" hidden>
+      <aside id="st-tasklist" class="st-tasks"></aside>
+      <div id="st-work" class="st-work">
+        <div class="st-task-h"><h3 id="stc-title"></h3><span id="stc-topic" class="chip"></span></div>
+        <p id="stc-desc" class="st-desc"></p>
+        <div class="st-hintbox"><ol id="stc-hints"></ol><button type="button" id="stc-hint" class="btn ghost sm" data-i18n>Show a hint</button></div>
+        <div id="stc-editor" class="st-editor"></div>
+        <div class="st-run">
+          <label for="stc-guess" data-i18n>My guess</label>
+          <textarea id="stc-guess" rows="3" spellcheck="false" data-i18n-attr="placeholder" placeholder="What will the console print? One line for each console.log."></textarea>
+          <div class="st-run-b"><button type="button" id="stc-run" class="btn primary sm" disabled data-i18n>Run</button><span id="stc-runhint"></span><button type="button" id="stc-copy" class="btn ghost sm" hidden data-i18n>Copy result</button></div>
+        </div>
+        <div id="stc-result" class="st-result" hidden></div>
+      </div>
+    </div>
+    <div id="st-tips" class="st-pane" hidden></div>
+  </div>
+  <div id="st-strip" class="st-strip" hidden></div>
+  <dialog id="dlg-stimport" class="dlg wtd st-dlg">
+    <header><div><h3 data-i18n>Import a content pack</h3><small data-i18n>The same id overwrites, a new id is added. A pack with an error changes nothing.</small></div><button type="button" class="icon-btn" onclick="this.closest('dialog').close()" data-i18n-attr="title,aria-label" title="Close" aria-label="Close"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></header>
+    <div class="st-imp">
+      <div class="st-imp-b"><label class="btn ghost sm" for="st-file" data-i18n>Choose a JSON file</label><input type="file" id="st-file" accept=".json,application/json" hidden><button type="button" id="st-schema" class="btn ghost sm" data-i18n-attr="title" title="Copies the schema, so you can paste it into the chat that writes the next pack" data-i18n>Copy the schema</button></div>
+      <textarea id="st-paste" spellcheck="false" data-i18n-attr="placeholder" placeholder="…or paste the JSON here"></textarea>
+      <div id="st-imp-msg" class="st-imp-msg" role="status" aria-live="polite"></div>
+    </div>
+    <footer><button type="button" class="btn ghost sm" onclick="this.closest('dialog').close()" data-i18n>Cancel</button><button type="button" id="st-imp-go" class="btn primary sm" disabled data-i18n>Import</button></footer>
+  </dialog>
 </section>
 
 <section id="tasks" class="overlay" hidden data-i18n-attr="aria-label" aria-label="Tasks">

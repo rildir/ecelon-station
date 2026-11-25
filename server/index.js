@@ -27,6 +27,7 @@ import { proofReport } from "./report.js";
 import { audit, readAudit, verifyChain, auditCsv, KINDS as AUDIT_KINDS } from "./audit.js";
 const APP_VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version; } catch { return ""; } })();
 import { libraryRouter, describeDocs, referenceLines, linkedDocIds, forgetAgent, docsTextFor } from "./library.js";
+import { studyRouter } from "./study.js";
 import { dataPath, LOGS, PUBLIC, rootPath, pkgDir, mkdirPrivate, writePrivate } from "./paths.js";
 
 const PORT = Number(process.env.PORT || 4777);
@@ -169,6 +170,7 @@ function setStatus(agentId, s, extra = {}) {
 }
 
 // ---------- REST ----------
+app.use("/api/study", studyRouter()); // JS Study: questions, tasks and progress (data/study.json)
 app.use("/api/library", libraryRouter({ broadcast: (m) => { broadcast(m); if (m?.type === "library") syncAllCoverage(); } }));
 
 // The server is one long-lived process: closing the window does not stop it, and reopening the shortcut finds it
@@ -203,13 +205,21 @@ app.get("/api/meta", (_req, res) => res.json({ build: BOOT_AT, stale: isStale(),
 const USAGE_FILE = dataPath("usage.json");
 let usage = {};
 try { usage = JSON.parse(fs.readFileSync(USAGE_FILE, "utf8")); } catch {}
+const resetAtMs = (t) => (t ? (t < 1e12 ? t * 1000 : t) : 0);
+// A window that has already reset says nothing about now: drop it rather than show its old figure
+function dropExpired() { for (const [k, v] of Object.entries(usage)) if (v?.resetsAt && resetAtMs(v.resetsAt) < Date.now()) delete usage[k]; }
+dropExpired();
 function saveUsage(info) {
   if (!info?.kind) return;
-  usage[info.kind] = { ...usage[info.kind], ...Object.fromEntries(Object.entries(info).filter(([, v]) => v !== null)), seenAt: Date.now() };
+  // Each event replaces what was known about its window. Claude Code sends the percentage only when it has one
+  // (typically near a limit); an event without it means "allowed, no figure", so an older figure must not stay.
+  // (Before this, a 99% from an earlier window was kept under the new window's reset time.)
+  usage[info.kind] = { ...Object.fromEntries(Object.entries(info).filter(([, v]) => v !== null)), seenAt: Date.now() };
+  dropExpired();
   try { mkdirPrivate(path.dirname(USAGE_FILE)); writePrivate(USAGE_FILE, JSON.stringify(usage, null, 2)); } catch {}
   broadcast({ type: "usage", usage });
 }
-app.get("/api/usage", (_req, res) => res.json(usage));
+app.get("/api/usage", (_req, res) => { dropExpired(); res.json(usage); });
 
 // ---------- images ----------
 const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;

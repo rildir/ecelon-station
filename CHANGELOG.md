@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- **JS Study.** A personal study room for JavaScript, next to the Playground in the top bar. A map of topics whose state (settled, getting there, weak, new, review due) is worked out from your answers; click-through quizzes (a daily warm-up that starts with yesterday's mistakes, a quiz on one topic, a mixed quiz) with the options shuffled every time and the topic hidden until you have answered; coding tasks that run in the same sandbox as the Playground (3-second limit, timers and promises are waited for) and ask for your guess before you run; a cheat sheet with your own notes; content packs you import as JSON (a pack with an error changes nothing). The progress is kept in `data/study.json` on your computer and is never committed.
+
 ## [0.2.0] - 2026-11-13
 
 - **Tasks on their own branches.** "On its own branch" on the task board runs a task in a separate git worktree (in the station's data folder, never inside the project) with its own agent and chat, so several tasks can run on one project at the same time. The card shows what the branch changed; Review shows the diff; Merge commits what is left and merges it into the project's current branch; Discard removes the copy and the branch. A conflicting merge is aborted, so the working copy is never left half-merged, and the branch is kept.
