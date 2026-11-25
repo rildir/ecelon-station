@@ -94,8 +94,8 @@ export function createStudy(ctx) {
   function setTab(name) {
     tab = name;
     for (const b of root.querySelectorAll("#st-tabs [data-tab]")) { const on = b.dataset.tab === name; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); }
-    for (const p of ["map", "quiz", "code", "tips"]) $("#st-" + p).hidden = p !== name;
-    ({ map: renderMap, quiz: renderQuiz, code: openCode, tips: renderTips })[name]();
+    for (const p of ["map", "quiz", "say", "code", "tips"]) $("#st-" + p).hidden = p !== name;
+    ({ map: renderMap, quiz: renderQuiz, say: renderSay, code: openCode, tips: renderTips })[name]();
     renderStrip();
   }
   const empty = () => `<div class="lib-empty"><b>${esc(t("No content yet"))}</b><p>${esc(t("Import a content pack (a JSON file) to get topics, questions and tasks."))}</p><button type="button" class="btn primary sm" data-act="import">${esc(t("Import pack"))}</button></div>`;
@@ -108,14 +108,15 @@ export function createStudy(ctx) {
     const st = states(), a = progress().answers, sk = core.streak(progress().sessions, today());
     const right = a.filter((x) => x.dogruMu).length, pct = a.length ? Math.round((right / a.length) * 100) : null;
     const due = content().topics.filter((x) => st[x.id].status === "tekrar").concat(content().topics.filter((x) => st[x.id].status === "zayif")).slice(0, 3);
-    if (!sel) sel = (due[0] || content().topics[0])?.id || null;
+    const next = content().topics.find((x) => st[x.id].status === "yeni");
+    if (!sel) sel = (due[0] || next || content().topics[0])?.id || null;
     const qCount = (id) => content().questions.filter((q) => q.topic === id).length;
     box.innerHTML = `<div class="st-sum">` +
       `<div class="st-tile"><b>${sk.count}</b><span>${esc(t("{n} {n|day|days} in a row", { n: sk.count }))}</span><small>${esc(sk.doneToday ? t("Today's warm-up is done") : t("No warm-up yet today"))}${sk.best > sk.count ? " · " + esc(t("best {n}", { n: sk.best })) : ""}</small></div>` +
       `<div class="st-tile"><b>${pct === null ? "–" : pct + "%"}</b><span>${esc(t("Correct answers"))}</span><small>${esc(a.length ? t("{a} of {b}", { a: right, b: a.length }) : t("No answers yet"))}</small></div>` +
-      `<div class="st-tile wide"><b class="sm">${due.length ? esc(due.map((x) => x.title).join(" · ")) : "–"}</b><span>${esc(t("To repeat next"))}</span><small>${esc(due.length ? t("Review-due topics first, then weak ones") : t("Nothing is due"))}</small></div></div>` +
-      `<div class="st-mapgrid"><div class="st-topics" role="list">${content().topics.map((x) => { const s = st[x.id], n = qCount(x.id);
-        return `<button type="button" role="listitem" class="st-topic${x.id === sel ? " on" : ""}" data-id="${esc(x.id)}" data-s="${s.status}"><span class="st-tt">${esc(x.title)}</span>${chip(s.status)}<small>${esc(n ? t("{n} {n|question|questions}", { n }) : t("No questions yet"))}${s.total ? " · " + esc(t("{a} of {b} right", { a: s.correct, b: s.total })) : ""}</small></button>`; }).join("")}</div>` +
+      `<div class="st-tile wide"><b class="sm">${due.length ? esc(due.map((x) => x.title).join(" · ")) : next ? esc(next.title) : "–"}</b><span>${esc(due.length || !next ? t("To repeat next") : t("Next topic to learn"))}</span><small>${esc(due.length ? t("Review-due topics first, then weak ones") : next ? t("The first topic you have not been asked about yet") : t("Nothing is due"))}</small></div></div>` +
+      `<div class="st-mapgrid"><div class="st-topics-wrap">${(() => { let g = null; return content().topics.map((x, i) => { const s = st[x.id], n = qCount(x.id), head = (x.group || "") !== g ? (g = x.group || "", g ? `${i ? "</div>" : ""}<h3 class="st-gh">${esc(g)}</h3><div class="st-topics" role="list">` : (i ? "</div>" : "") + `<div class="st-topics" role="list">`) : (i ? "" : `<div class="st-topics" role="list">`);
+        return head + `<button type="button" role="listitem" class="st-topic${x.id === sel ? " on" : ""}" data-id="${esc(x.id)}" data-s="${s.status}"><span class="st-tt">${esc(x.title)}</span>${chip(s.status)}<small>${esc(n ? t("{n} {n|question|questions}", { n }) : t("No questions yet"))}${s.total ? " · " + esc(t("{a} of {b} right", { a: s.correct, b: s.total })) : ""}</small></button>`; }).join("") + "</div>"; })()}</div>` +
       `<aside class="st-detail" id="st-detail"></aside></div>` +
       `<p class="st-foot"><button type="button" class="st-link" data-act="reset">${esc(t("Reset progress"))}</button></p>`;
     renderDetail(st);
@@ -128,11 +129,56 @@ export function createStudy(ctx) {
   function renderDetail(st = states()) {
     const tp = topicOf(sel), box = $("#st-detail"); if (!tp || !box) { if (box) box.innerHTML = ""; return; }
     const s = st[tp.id], hints = content().hints.filter((h) => h.topic === tp.id), notes = progress().notes.filter((n) => n.topic === tp.id), n = content().questions.filter((q) => q.topic === tp.id).length;
-    const qOf = (id) => content().questions.find((q) => q.id === id);
+    const qOf = (id) => content().questions.find((q) => q.id === id), L = tp.lesson || {}, talk = (L.talk || []).length;
+    const sec = (title, html) => html ? `<h4>${esc(title)}</h4>${html}` : "";
+    box.scrollTop = 0;
     box.innerHTML = `<h3>${esc(tp.title)}</h3><p class="st-reason">${chip(s.status)} <span>${esc(reason(s))}</span></p>` +
-      `<button type="button" class="btn primary sm" data-act="topictest" ${n ? "" : "disabled"}>${esc(n ? t("Quiz on this topic") : t("No questions on this topic yet"))}</button>` +
+      `<div class="st-q-b"><button type="button" class="btn primary sm" data-act="topictest" ${n ? "" : "disabled"}>${esc(n ? t("Quiz on this topic") : t("No questions on this topic yet"))}</button>` +
+      (talk ? `<button type="button" class="btn sm" data-act="saytopic">${esc(t("Say it ({n})", { n: talk }))}</button>` : "") + `</div>` +
+      (L.summary ? `<p class="st-sumtxt">${esc(L.summary)}</p>` : "") +
+      sec(t("Key points"), L.points?.length ? `<ul class="st-list">${L.points.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "") +
+      sec(t("Example"), L.example ? codeBlock(L.example) + `<div class="st-q-b"><button type="button" class="btn ghost sm" data-act="runex">${esc(t("Run the example"))}</button></div><div id="st-exout" class="st-real" hidden></div>` : "") +
+      sec(t("A common mistake"), L.mistake ? `<p class="st-mist">${esc(L.mistake)}</p>` : "") +
       `<h4>${esc(t("Cheat sentences"))}</h4>` + (hints.length || notes.length ? `<ul class="st-list">${hints.map((h) => `<li>${esc(h.text)}</li>`).join("")}${notes.map((x) => `<li class="mine">${esc(x.text)}</li>`).join("")}</ul>` : `<p class="st-none">${esc(t("None yet."))}</p>`) +
+      sec(t("How to say it"), L.say ? `<p class="st-say">${esc(L.say)}</p>` : "") +
       `<h4>${esc(t("My last 10 answers"))}</h4>` + (s.recent.length ? `<ul class="st-hist">${s.recent.map((a) => `<li class="${a.dogruMu ? "ok" : "bad"}"><b>${a.dogruMu ? "✓" : "✗"}</b><time>${esc(nice(a.tarih))}</time><code>${esc(firstLine(qOf(a.questionId)?.code || ""))}</code><span>${esc(a.secilen)}</span></li>`).join("")}</ul>` : `<p class="st-none">${esc(t("No answers yet"))}</p>`);
+  }
+
+  // ---------------------------------------------------------------- 1b. say it: open questions with a model answer
+  // You answer in your own words first (written or only in your head), then the model answer opens, and you mark
+  // whether you had it. The marks only decide what comes first next time; they do not change a topic's status.
+  let say = null;
+  const talkItems = () => content().topics.flatMap((x) => (x.lesson?.talk || []).map((q, n) => ({ topic: x.id, n, ask: q.ask, answer: q.answer })));
+  function startSay(topic) {
+    const all = talkItems().filter((x) => !topic || x.topic === topic); if (!all.length) return ctx.toast(t("There are no open questions yet. Import a pack."), "bad");
+    const last = new Map(); for (const r of progress().talks || []) last.set(r.topic + "/" + r.n, r);
+    const rank = (x) => { const r = last.get(x.topic + "/" + x.n); return !r ? 0 : r.ok ? 2 : 1; }; // never asked, then missed, then had it
+    const pool = core.shuffled(all).sort((a, b) => rank(a) - rank(b)).slice(0, 10);
+    say = { items: pool.map((x) => ({ ...x, mine: "", mark: null, open: false })), i: 0, done: false, topic: topic || null }; setTab("say");
+  }
+  function renderSay() {
+    const box = $("#st-say"), total = talkItems().length;
+    if (!hasContent() || !total) { box.innerHTML = hasContent() ? `<div class="lib-empty"><b>${esc(t("No open questions yet"))}</b><p>${esc(t("Import a pack that has open questions."))}</p><button type="button" class="btn primary sm" data-act="import">${esc(t("Import pack"))}</button></div>` : empty(); return; }
+    if (!say) {
+      const withTalk = content().topics.filter((x) => x.lesson?.talk?.length);
+      box.innerHTML = `<div class="st-saystart"><h3>${esc(t("Say it in your own words"))}</h3><p>${esc(t("You get an open question. Answer it aloud or in writing, then open the model answer and mark whether you had it. Questions you have not seen or missed come first."))}</p>` +
+        `<div class="st-q-b"><button type="button" class="btn primary" data-act="saystart">${esc(t("Mixed, up to 10 questions"))}</button></div>` +
+        `<div class="st-pickrow"><select id="st-saypick" aria-label="${esc(t("Topic"))}">${withTalk.map((x) => `<option value="${esc(x.id)}">${esc(x.title)} (${x.lesson.talk.length})</option>`).join("")}</select><button type="button" class="btn sm" data-act="saytopic2">${esc(t("Start this topic"))}</button></div></div>`; return;
+    }
+    if (say.done) { const had = say.items.filter((x) => x.mark === true).length, seen = say.items.filter((x) => x.mark !== null).length;
+      box.innerHTML = `<div class="st-saystart"><h3>${esc(t("Done"))}</h3><p class="st-bigres">${had} / ${seen}</p><p>${esc(t("{a} of {b} answered fully", { a: had, b: seen }))}</p><div class="st-q-b"><button type="button" class="btn primary" data-act="sayagain">${esc(t("Back to the start"))}</button></div></div>`; return; }
+    const it = say.items[say.i];
+    box.innerHTML = `<div class="st-q"><div class="st-q-h"><h3>${esc(t("Question {n}", { n: say.i + 1 }))}</h3><span>${say.i + 1} / ${say.items.length}</span><button type="button" class="st-link" data-act="sayend">${esc(t("End"))}</button></div>` +
+      `<p class="st-ask">${esc(it.ask)}</p><span class="st-s" data-s="yeni">${esc(titleOf(it.topic))}</span>` +
+      `<textarea id="st-saymine" class="st-saymine" rows="4" placeholder="${esc(t("Your answer (optional)"))}" aria-label="${esc(t("Your answer (optional)"))}" ${it.open ? "disabled" : ""}>${esc(it.mine)}</textarea>` +
+      (it.open ? `<div class="st-why"><h4>${esc(t("Model answer"))}</h4><p class="st-say">${esc(it.answer)}</p><div class="st-q-b"><button type="button" class="btn primary sm" data-act="saymark" data-ok="1">${esc(t("I had it"))}</button><button type="button" class="btn sm" data-act="saymark" data-ok="0">${esc(t("I missed parts"))}</button></div></div>` : `<div class="st-q-b"><button type="button" class="btn primary sm" data-act="sayopen">${esc(t("Show the model answer"))}</button></div>`) + `</div>`;
+    (it.open ? $("[data-act=saymark]", box) : $("#st-saymine", box))?.focus({ preventScroll: true });
+  }
+  function sayMark(ok) {
+    const it = say.items[say.i]; it.mark = ok; const now = new Date();
+    const rec = { id: uid(), topic: it.topic, n: it.n, tarih: now.toISOString(), gun: today(), ok, mine: it.mine };
+    (progress().talks ||= []).push(rec); save("/log", { talks: [rec] });
+    if (say.i + 1 < say.items.length) say.i++; else say.done = true; renderSay();
   }
 
   // ---------------------------------------------------------------- 2. quizzes
@@ -303,6 +349,15 @@ export function createStudy(ctx) {
       case "import": openImport(); break;
       case "start": start(el.dataset.kind, el.dataset.kind === "konu" ? $("#st-pick")?.value : null); break;
       case "topictest": start("konu", sel); break;
+      case "saytopic": startSay(sel); break;
+      case "saystart": startSay(null); break;
+      case "saytopic2": startSay($("#st-saypick")?.value || null); break;
+      case "sayopen": { const it = say.items[say.i]; it.mine = $("#st-saymine")?.value || ""; it.open = true; renderSay(); break; }
+      case "saymark": sayMark(el.dataset.ok === "1"); break;
+      case "sayend": say = null; renderSay(); break;
+      case "sayagain": say = null; renderSay(); break;
+      case "runex": { const code = topicOf(sel)?.lesson?.example; if (!code) break; el.disabled = true; runner ||= createRunner(root); const res = await runner.run(code); el.disabled = false; const out = $("#st-exout"); if (!out) break; out.hidden = false;
+        out.innerHTML = `<h4>${esc(t("Real output"))}</h4>` + lines(res.lines.filter((l) => l.kind !== "result").flatMap((l) => l.text.split("\n")), -1) + (res.timedOut ? `<div class="st-l err">${esc(t("Stopped after 3 seconds."))}</div>` : ""); break; }
       case "next": if (quiz.i + 1 < quiz.qs.length) { quiz.i++; renderQuiz(); renderStrip(); } else finish(); break;
       case "endquiz": if (quiz.qs.some((x) => x.pick !== null)) finish(); else { quiz = null; renderQuiz(); renderStrip(); } break;
       case "again": quiz = null; renderQuiz(); renderStrip(); break;
@@ -311,7 +366,7 @@ export function createStudy(ctx) {
         const shown1 = res.lines.filter((l) => l.kind !== "result"); out.innerHTML = `<h4>${esc(t("Real output"))}</h4>` + lines(shown1.flatMap((l) => l.text.split("\n")), -1) + (res.timedOut ? `<div class="st-l err">${esc(t("Stopped after 3 seconds."))}</div>` : ""); break; }
       case "delnote": { const n = progress().notes.find((x) => x.id === el.dataset.id); if (!n) break; progress().notes = progress().notes.filter((x) => x !== n); saveNotes(); renderTips();
         ctx.toast(t("Note deleted"), "", { label: t("Undo"), fn: () => { progress().notes.push(n); saveNotes(); if (!root.hidden && tab === "tips") renderTips(); } }); break; }
-      case "reset": if (await ctx.confirmBox({ title: t("Reset your progress?"), body: t("Your answers, tries, finished tests and streak are deleted from this computer. The content and your notes stay. This cannot be undone."), ok: t("Reset"), danger: true })) { await save("/progress", undefined, "DELETE"); progress().answers = []; progress().attempts = []; progress().sessions = []; progress().drafts = {}; for (const m of models.values()) m.dispose(); models.clear(); quiz = null; setTab(tab); } break;
+      case "reset": if (await ctx.confirmBox({ title: t("Reset your progress?"), body: t("Your answers, tries, finished tests and streak are deleted from this computer. The content and your notes stay. This cannot be undone."), ok: t("Reset"), danger: true })) { await save("/progress", undefined, "DELETE"); progress().answers = []; progress().attempts = []; progress().sessions = []; progress().talks = []; progress().drafts = {}; for (const m of models.values()) m.dispose(); models.clear(); quiz = null; setTab(tab); } break;
       default:
     }
   });

@@ -8,7 +8,7 @@ import { dataPath, mkdirPrivate, writePrivate } from "./paths.js";
 import { validatePack, mergePack, emptyProgress } from "../public/study-core.js";
 
 const FILE = dataPath("study.json");
-const CAP = { answers: 20000, attempts: 5000, sessions: 5000, notes: 500, drafts: 300 };
+const CAP = { answers: 20000, attempts: 5000, sessions: 5000, talks: 5000, notes: 500, drafts: 300 };
 const blank = () => ({ v: 1, content: { topics: [], hints: [], questions: [], tasks: [] }, progress: emptyProgress() });
 
 function read() {
@@ -31,6 +31,8 @@ const clean = {
     ? { id: r.id, questionId: r.questionId, topic: ID.test(r.topic || "") ? r.topic : "", tarih: when(r.tarih), gun: r.gun, dogruMu: r.dogruMu, secilen: text(r.secilen, 300) } : null),
   attempts: (r) => (r && ID.test(r.id || "") && ID.test(r.taskId || "") && when(r.tarih) && DAY.test(r.gun || "") && typeof r.eslesti === "boolean"
     ? { id: r.id, taskId: r.taskId, tarih: when(r.tarih), gun: r.gun, eslesti: r.eslesti, tahmin: text(r.tahmin, 2000), cikti: text(r.cikti, 4000), zamanAsimi: r.zamanAsimi === true } : null),
+  talks: (r) => (r && ID.test(r.id || "") && ID.test(r.topic || "") && Number.isInteger(r.n) && r.n >= 0 && r.n < 100 && when(r.tarih) && DAY.test(r.gun || "") && typeof r.ok === "boolean"
+    ? { id: r.id, topic: r.topic, n: r.n, tarih: when(r.tarih), gun: r.gun, ok: r.ok, mine: text(r.mine, 2000) } : null),
   sessions: (r) => (r && ID.test(r.id || "") && ["isinma", "konu", "karisik"].includes(r.tur) && when(r.tarih) && DAY.test(r.gun || "") && Number.isInteger(r.dogru) && Number.isInteger(r.toplam)
     ? { id: r.id, tur: r.tur, tarih: when(r.tarih), gun: r.gun, dogru: r.dogru, toplam: r.toplam } : null),
 };
@@ -50,9 +52,9 @@ export function studyRouter() {
   // answers, task attempts and finished tests are only ever added (an id the file already has is ignored)
   r.post("/log", (req, res) => {
     const d = read(), b = req.body || {};
-    for (const k of ["answers", "attempts", "sessions"]) {
+    for (const k of ["answers", "attempts", "sessions", "talks"]) {
       if (!Array.isArray(b[k])) continue;
-      const have = new Set(d.progress[k].map((x) => x.id));
+      d.progress[k] ||= []; const have = new Set(d.progress[k].map((x) => x.id));
       for (const raw of b[k].slice(0, 200)) { const x = clean[k](raw); if (x && !have.has(x.id)) { d.progress[k].push(x); have.add(x.id); } }
       if (d.progress[k].length > CAP[k]) d.progress[k] = d.progress[k].slice(-CAP[k]);
     }

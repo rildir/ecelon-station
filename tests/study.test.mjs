@@ -154,3 +154,26 @@ test("days: a local day key, and the states of all topics at once", () => {
   assert.equal(addDays("2026-12-31", 1), "2027-01-01");
   assert.equal(allStates(content, [log(D(0), "q-a1", false)], D(0)).a.status, "orta");
 });
+
+test("a topic page (group, lesson) is kept when valid; a broken lesson is refused as a whole", () => {
+  const lesson = { summary: "kısa", points: ["bir", "iki"], example: "console.log(1);", mistake: "hata", say: "söyle", talk: [{ ask: "Soru?", answer: "Cevap." }] };
+  const ok = validatePack({ topics: [{ id: "a", title: "A", status: "yeni", group: "1. Temel", lesson }] });
+  assert.ok(ok.ok);
+  assert.deepEqual(ok.pack.topics[0].lesson, lesson);
+  assert.equal(ok.pack.topics[0].group, "1. Temel");
+  const old = validatePack({ topics: [{ id: "a", title: "A", status: "yeni" }] }); // a topic without a page is still valid
+  assert.ok(old.ok && !("lesson" in old.pack.topics[0]));
+  for (const bad of [{ ...lesson, points: "x" }, { ...lesson, talk: [{ ask: "q" }] }, { ...lesson, summary: "" }, "metin"]) {
+    const r = validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: bad }] });
+    assert.equal(r.ok, false);
+  }
+});
+
+test("merging a pack with a page keeps the topic's place and replaces its page", () => {
+  const base = { topics: [{ id: "a", title: "A", status: "orta" }, { id: "b", title: "B", status: "yeni" }], hints: [], questions: [], tasks: [] };
+  const v = validatePack({ topics: [{ id: "b", title: "B", status: "yeni", lesson: { summary: "özet" } }] }, base);
+  const m = mergePack(base, v.pack);
+  assert.deepEqual(m.content.topics.map((x) => x.id), ["a", "b"]);
+  assert.equal(m.content.topics[1].lesson.summary, "özet");
+  assert.equal(m.report.topics.updated, 1);
+});

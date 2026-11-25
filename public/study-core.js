@@ -124,11 +124,11 @@ export function compareOutput(actual, expected) {
 
 // ---------------------------------------------------------------- packs: checking and merging
 const ID = /^[A-Za-z0-9_.-]{1,80}$/;
-const LIMITS = { list: 3000, title: 200, code: 6000, ask: 300, option: 300, why: 1500, desc: 4000, line: 400, lines: 100, hint: 600, taskHints: 20 };
+const LIMITS = { list: 3000, title: 200, code: 6000, ask: 300, option: 300, why: 1500, desc: 4000, line: 400, lines: 100, hint: 600, taskHints: 20, group: 60, summary: 900, point: 320, points: 12, example: 3000, mistake: 700, say: 1800, talks: 10, talkAsk: 300, talkAnswer: 1800 };
 const isStr = (x) => typeof x === "string";
 const norm = (s) => String(s).replace(/\r\n/g, "\n");
 const emptyContent = () => ({ topics: [], hints: [], questions: [], tasks: [] });
-export const emptyProgress = () => ({ answers: [], attempts: [], sessions: [], notes: [], drafts: {} });
+export const emptyProgress = () => ({ answers: [], attempts: [], sessions: [], talks: [], notes: [], drafts: {} });
 
 /** Check a pack (the parsed JSON) against the schema. `existing` is the content already kept: a question may belong to
  *  a topic that is not in the pack but is already there. Returns { ok: true, pack } with only the known fields, or
@@ -152,11 +152,23 @@ export function validatePack(raw, existing = emptyContent(), t = plain) {
   const ids = (k) => { const seen = new Set(); return (v, i) => { const where = `${k}[${i}]`; if (!v || typeof v !== "object" || Array.isArray(v)) { bad(where, t("must be an object")); return null; } if (!isStr(v.id) || !ID.test(v.id)) { bad(where, t("id must be 1-80 letters, digits, - _ .")); return null; } if (seen.has(v.id)) { bad(`${k} (${v.id})`, t("id appears twice in the pack")); return null; } seen.add(v.id); return `${k}[${i}] (${v.id})`; }; };
   const topicOk = (tp) => ID.test(tp);
 
+  // the page of a topic: a short summary, the points to know, a runnable example, a common mistake, how to say it, and open questions
+  const lessonOf = (where, l) => {
+    if (!l || typeof l !== "object" || Array.isArray(l)) { bad(where, t("lesson must be an object")); return null; }
+    const out = {}, text = (key, max) => { if (l[key] === undefined) return; if (isStr(l[key]) && l[key].trim() && l[key].length <= max) out[key] = key === "example" ? l[key].replace(/\s+$/, "") : norm(l[key]); else bad(where, t("lesson {key} must be a text of at most {n} characters", { key, n: max })); };
+    text("summary", LIMITS.summary); text("example", LIMITS.example); text("mistake", LIMITS.mistake); text("say", LIMITS.say);
+    if (l.points !== undefined) { if (Array.isArray(l.points) && l.points.length <= LIMITS.points && l.points.every((x) => isStr(x) && x.trim() && x.length <= LIMITS.point)) out.points = l.points.map(norm); else bad(where, t("lesson points must be a list of at most {n} short texts", { n: LIMITS.points })); }
+    if (l.talk !== undefined) { if (Array.isArray(l.talk) && l.talk.length <= LIMITS.talks && l.talk.every((x) => x && typeof x === "object" && isStr(x.ask) && x.ask.trim() && x.ask.length <= LIMITS.talkAsk && isStr(x.answer) && x.answer.trim() && x.answer.length <= LIMITS.talkAnswer)) out.talk = l.talk.map((x) => ({ ask: norm(x.ask), answer: norm(x.answer) })); else bad(where, t("lesson talk must be a list of at most {n} items, each with ask and answer", { n: LIMITS.talks })); }
+    return out;
+  };
   const pid = ids("topics");
   (raw.topics || []).forEach((tp, i) => { const where = pid(tp, i); if (!where) return;
     const title = str(where, tp, "title", LIMITS.title), status = tp.status === "zay\u0131f" ? "zayif" : tp.status;
     if (!STATUSES.includes(status)) bad(where, t("status must be one of {list}", { list: STATUSES.join(", ") }));
-    if (title && STATUSES.includes(status)) pack.topics.push({ id: tp.id, title, status }); });
+    const extra = {};
+    if (tp.group !== undefined) { if (isStr(tp.group) && tp.group.trim() && tp.group.length <= LIMITS.group) extra.group = norm(tp.group); else bad(where, t("group must be a short text")); }
+    if (tp.lesson !== undefined) { const l = lessonOf(where, tp.lesson); if (l) extra.lesson = l; }
+    if (title && STATUSES.includes(status)) pack.topics.push({ id: tp.id, title, status, ...extra }); });
   const known = new Set([...existing.topics.map((x) => x.id), ...(raw.topics || []).filter((x) => x && isStr(x.id)).map((x) => x.id)]);
 
   (raw.hints || []).forEach((h, i) => { const where = `hints[${i}]`; if (!h || typeof h !== "object" || Array.isArray(h)) return bad(where, t("must be an object"));
@@ -216,7 +228,10 @@ export function quizText({ title, day, rows, total }, t = plain, loc = "en-US") 
 export const SCHEMA_TEXT = `Write a JSON content pack for a JavaScript study tool. Output only the JSON.
 {
   "version": 1,
-  "topics":    [ { "id": "closure", "title": "Closure", "status": "yeni" } ],
+  "topics":    [ { "id": "closure", "title": "Closure", "status": "yeni", "group": "Scope and functions",
+                   "lesson": { "summary": "3-5 sentences", "points": ["a thing to know"], "example": "console.log(1);",
+                               "mistake": "the common mistake", "say": "how to say it aloud in one paragraph",
+                               "talk": [ { "ask": "Explain closures.", "answer": "a model answer" } ] } } ],
   "hints":     [ { "topic": "closure", "text": "one short memorable sentence" } ],
   "questions": [ { "id": "q-closure-2", "topic": "closure", "code": "console.log(1);", "ask": "What does the console print?",
                    "options": ["A", "B", "C", "D"], "correct": 2, "why": "one or two sentences" } ],
@@ -226,4 +241,4 @@ export const SCHEMA_TEXT = `Write a JSON content pack for a JavaScript study too
 Rules: every id is unique and uses only letters, digits, - _ . ; status is one of oturdu, orta, zayif, yeni (a new topic is "yeni");
 a question has 2 to 6 different options and "correct" is the 0-based index of the right one; a hint's topic is a topic id or "genel";
 expectedOutput is what console.log prints, one item per line (arrays and objects are compared by structure, spaces do not matter).
-Any list may be left out. The same id as before overwrites that item.`;
+The topics' order is the learning order; group, lesson and every part of a lesson are optional. Any list may be left out. The same id as before overwrites that item.`;
