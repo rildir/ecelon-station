@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **Usage panel: account and fallback model.** The usage panel names limits that belong to one model ("Weekly Fable limit"), shows who is signed in (from `claude auth status`) and has a switch that passes `--fallback-model` (Sonnet 5.5) to Claude Code, so a message is answered by another model when the chosen one is busy or unavailable.
 - **JS Study.** A personal study room for JavaScript, next to the Playground in the top bar. A map of topics whose state (settled, getting there, weak, new, review due) is worked out from your answers; click-through quizzes (a daily warm-up that starts with yesterday's mistakes, a quiz on one topic, a mixed quiz) with the options shuffled every time and the topic hidden until you have answered; coding tasks that run in the same sandbox as the Playground (3-second limit, timers and promises are waited for) and ask for your guess before you run; a cheat sheet with your own notes; content packs you import as JSON (a pack with an error changes nothing). The progress is kept in `data/study.json` on your computer and is never committed.
 
 ## [0.2.0] - 2026-11-13

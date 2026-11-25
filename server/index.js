@@ -19,7 +19,7 @@ import * as fsx from "./files.js";
 import * as runs from "./runs.js";
 import { listAgents, getAgent, addAgent, addMember, teamOf, ensureFullTeams, updateAgent, attachChat, dropSessionChats, removeAgent, reorderAgents, MODELS, EFFORTS, PERMISSIONS } from "./agents.js";
 import { ROLES, roleOf, publicRoles } from "./roles.js";
-import { runClaude, resolveClaude, claudeMissingHint, uploadsDir, oneShot, claudeVersion, cliInfo } from "./runner.js";
+import { runClaude, resolveClaude, claudeMissingHint, uploadsDir, oneShot, claudeVersion, cliInfo, authStatus, FALLBACK_MODEL } from "./runner.js";
 import { runMock } from "./mockRunner.js";
 import { t, locale, langName, setLang, getLang, getDict, LANGS } from "./i18n.js";
 import { seedDemo } from "./demo.js";
@@ -220,6 +220,16 @@ function saveUsage(info) {
   broadcast({ type: "usage", usage });
 }
 app.get("/api/usage", (_req, res) => { dropExpired(); res.json(usage); });
+// who is signed in (from `claude auth status`): only these fields leave the server, and they are asked for at most once a minute
+let acct = { at: 0, v: null };
+app.get("/api/account", async (_req, res) => {
+  if (Date.now() - acct.at > 60000) {
+    const a = await authStatus();
+    const pick = (...k) => { for (const x of k) if (typeof a?.[x] === "string" && a[x]) return a[x].slice(0, 120); return null; };
+    acct = { at: Date.now(), v: a ? { loggedIn: a.loggedIn === true, method: pick("authMethod"), email: pick("email", "userEmail"), org: pick("orgName", "organizationName", "organization"), plan: pick("subscriptionType", "plan", "planName") } : null };
+  }
+  res.json({ ...(acct.v || { loggedIn: null }), fallbackModel: FALLBACK_MODEL });
+});
 
 // ---------- images ----------
 const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
@@ -1179,6 +1189,7 @@ app.get("/api/prefs", (_req, res) => res.json({ ...readPrefs(), lang: getLang() 
 app.put("/api/prefs", (req, res) => {
   const p = readPrefs(); const b = req.body || {};
   if (typeof b.lang === "string" && LANGS.includes(b.lang) && b.lang !== getLang()) { p.lang = b.lang; setLang(b.lang); setTimeout(() => broadcast({ type: "reload" }), 100); }
+  if (typeof b.fallback === "boolean") p.fallback = b.fallback;
   if (Array.isArray(b.quick)) p.quick = b.quick.slice(0, 20).map((q) => ({ label: String(q?.label || "").trim().slice(0, 30), text: String(q?.text || "").trim().slice(0, 2000), ...(ROLES[q?.role] ? { role: q.role } : {}) })).filter((q) => q.label && q.text);
   mkdirPrivate(path.dirname(PREFS)); writePrivate(PREFS, JSON.stringify(p, null, 2));
   res.json(p);

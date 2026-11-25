@@ -1946,5 +1946,17 @@
   "Your answers, tries, finished tests and streak are deleted from this computer. The content and your notes stay. This cannot be undone.": "Cevapların, denemelerin, bitirdiğin testler ve serin bu bilgisayardan silinir. İçerik ve notların kalır. Geri alınamaz.",
   "Reset": "Sıfırla",
   "That file is too large for a content pack.": "Bu dosya bir içerik paketi için çok büyük.",
-  "Schema copied": "Şema kopyalandı"
+  "Schema copied": "Şema kopyalandı",
+  "Weekly {model} limit": "Haftalık {model} limiti",
+  "5-hour {model} limit": "5 saatlik {model} limiti",
+  "Account": "Hesap",
+  "Not signed in. Run claude, then /login.": "Giriş yapılmamış. claude komutunu çalıştırıp /login yaz.",
+  "Sign-in": "Giriş yöntemi",
+  "Email": "E-posta",
+  "Organization": "Kuruluş",
+  "Plan": "Plan",
+  "No account details from Claude Code.": "Claude Code hesap bilgisi vermedi.",
+  "If the model is busy or unavailable, switch to {model}": "Model meşgulse ya da kullanılamıyorsa {model} modeline geç",
+  "Takes effect with the next message": "Sonraki mesajdan itibaren geçerli",
+  "Switched off": "Kapatıldı"
 }

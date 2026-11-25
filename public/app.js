@@ -1496,6 +1496,9 @@ document.addEventListener("keydown", (e) => {
 // ---- usage limits (as reported by Claude Code)
 let usage = {};
 const USAGE_NAMES = { five_hour: t("5-hour limit"), seven_day: t("Weekly limit"), seven_day_opus: t("Weekly Opus limit"), overage: t("Extra usage") };
+// a limit that has its own model ("seven_day_fable"): named after the model
+const usageName = (k) => USAGE_NAMES[k] || (/^seven_day_(.+)$/.exec(k) ? t("Weekly {model} limit", { model: titleCase(RegExp.$1) }) : /^five_hour_(.+)$/.exec(k) ? t("5-hour {model} limit", { model: titleCase(RegExp.$1) }) : k);
+const titleCase = (s) => s.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 const resetMs = (t) => (t ? (t < 1e12 ? t * 1000 : t) : null);
 function fmtReset(at) {
   const ms = resetMs(at); if (!ms) return "";
@@ -1516,14 +1519,23 @@ function renderUsage() {
 function openUsage(btn) {
   const pop = $("#usage-pop");
   const rows = liveUsage();
-  pop.innerHTML = `<h4>${t("Usage")}</h4>` + rows.map(([k, v]) => `<div class="u-row"><div class="u-head"><span>${escHtml(USAGE_NAMES[k] || k)}</span><span>${t("{n}%", { n: Math.round(v.utilization * 100) })}</span></div>
+  pop.innerHTML = `<h4>${t("Usage")}</h4>` + rows.map(([k, v]) => `<div class="u-row"><div class="u-head"><span>${escHtml(usageName(k))}</span><span>${t("{n}%", { n: Math.round(v.utilization * 100) })}</span></div>
     <span class="u-bar ${barCls(v.utilization)}"><i style="width:${Math.round(v.utilization * 100)}%"></i></span>
     <small>${v.resetsAt ? t("Resets: {when}", { when: fmtReset(v.resetsAt) }) : ""}${v.status === "rejected" ? " · " + t("limit reached") : ""}</small></div>`).join("") +
     `<p>${t("Claude Code reports this with every answer; last update {time}.", { time: new Date(Math.max(...rows.map(([, v]) => v.seenAt || 0))).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) })}</p>`;
+  pop.insertAdjacentHTML("beforeend", `<div class="u-acct" id="u-acct"></div>`);
   pop.hidden = false;
-  const r = btn.getBoundingClientRect();
-  pop.style.top = r.bottom + 8 + "px"; pop.style.bottom = ""; pop.style.left = Math.max(8, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 8)) + "px";
-  btn.setAttribute("aria-expanded", "true");
+  const place = () => { const r = btn.getBoundingClientRect(); pop.style.top = r.bottom + 8 + "px"; pop.style.bottom = ""; pop.style.left = Math.max(8, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 8)) + "px"; };
+  place(); btn.setAttribute("aria-expanded", "true");
+  fillAccount(pop).then(place);
+}
+// who is signed in, and the "use another model when this one is busy" switch (asked for when the panel opens)
+async function fillAccount(pop) {
+  const a = await api("/api/account").catch(() => null), p = await api("/api/prefs").catch(() => ({})), box = pop.querySelector("#u-acct"); if (!box || !a) return;
+  const line = (k, v) => (v ? `<div class="u-kv"><span>${escHtml(k)}</span><b>${escHtml(v)}</b></div>` : "");
+  box.innerHTML = `<h4>${t("Account")}</h4>` + (a.loggedIn === false ? `<p>${t("Not signed in. Run claude, then /login.")}</p>` : line(t("Sign-in"), a.method) + line(t("Email"), a.email) + line(t("Organization"), a.org) + line(t("Plan"), a.plan) || `<p>${t("No account details from Claude Code.")}</p>`) +
+    `<label class="u-sw"><input type="checkbox" id="u-fb" ${p.fallback ? "checked" : ""}><span>${t("If the model is busy or unavailable, switch to {model}", { model: modelName(a.fallbackModel) })}</span></label>`;
+  box.querySelector("#u-fb").onchange = async (e) => { try { await api("/api/prefs", { method: "PUT", body: { fallback: e.target.checked } }); toast(e.target.checked ? t("Takes effect with the next message") : t("Switched off"), "ok"); } catch (err) { e.target.checked = !e.target.checked; toast(err.message, "bad"); } };
 }
 $("#usage-btn").onclick = toggle(openUsage);
 

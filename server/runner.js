@@ -103,6 +103,26 @@ export function killTree(child) {
   else { try { child.kill("SIGINT"); } catch {} setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 8000).unref(); }
 }
 
+// The user can ask for a second model to be used when the chosen one is busy or unavailable (Settings in the usage
+// panel; data/prefs.json "fallback"). It is Sonnet 5.5 unless that is already the model in use.
+export const FALLBACK_MODEL = "claude-sonnet-5-5";
+export function fallbackFor(model) {
+  try { if (JSON.parse(fs.readFileSync(dataPath("prefs.json"), "utf8")).fallback !== true) return null; } catch { return null; }
+  return model && model !== FALLBACK_MODEL ? FALLBACK_MODEL : null;
+}
+
+/** `claude auth status --json`: who is signed in. Null when Claude Code is missing or does not answer. */
+export function authStatus(timeout = 8000) {
+  return new Promise((resolve) => {
+    const sp = spawnSpec(); if (!sp) return resolve(null);
+    const child = spawn(sp.cmd, [...sp.pre, "auth", "status", "--json"], { shell: sp.shell, env: childEnv(), stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    let out = ""; const timer = setTimeout(() => { killTree(child); resolve(null); }, timeout);
+    child.stdout.on("data", (d) => { out += d; });
+    child.on("error", () => { clearTimeout(timer); resolve(null); });
+    child.on("close", () => { clearTimeout(timer); try { resolve(JSON.parse(out)); } catch { resolve(null); } });
+  });
+}
+
 const PERMISSION_MODE = process.env.CLAUDE_PERMISSION_MODE || "acceptEdits";
 
 export function buildArgs(agent) {
@@ -115,6 +135,7 @@ export function buildArgs(agent) {
     "--effort", agent.effort,
     "--permission-mode", agent.permission || PERMISSION_MODE,
   ];
+  const fb = fallbackFor(agent.model); if (fb) args.push("--fallback-model", fb);
   // Images the user attaches are saved in this folder; access is granted so the agent can read them.
   const up = uploadsDir(agent.id);
   // document library: so the agent can read the reference documents

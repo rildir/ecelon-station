@@ -2189,3 +2189,7 @@ body.wt-chat #btn-toproject { display: none !important; }
   .st-codepane { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .st-tasks { grid-auto-flow: column; grid-auto-columns: 220px; overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid rgba(255, 255, 255, .06); }
   .st-cols, .st-noteform { grid-template-columns: minmax(0, 1fr); } #study .lib-top { grid-template-columns: auto minmax(0, 1fr) auto; } #study .tk-filter { grid-column: 1 / -1; order: 5; justify-content: flex-start; overflow-x: auto; }
 }
+/* usage panel: account and fallback switch */
+.u-acct { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rim); } .u-acct h4 { margin: 0 0 6px; }
+.u-kv { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 12.5px; color: var(--lav-3); } .u-kv b { min-width: 0; overflow-wrap: anywhere; text-align: right; font-weight: 500; color: var(--lav); }
+.u-sw { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: 12.5px; line-height: 1.4; color: var(--lav-2); cursor: pointer; } .u-sw input { margin-top: 2px; flex: none; accent-color: var(--orange); }
