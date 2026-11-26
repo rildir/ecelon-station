@@ -3044,11 +3044,13 @@ function renderBc() {
   const apply = (v) => { z = Math.min(2, Math.max(0.7, Math.round(v * 20) / 20)); chatEl().style.zoom = z === 1 ? "" : String(z); try { localStorage.setItem("chatZoom", String(z)); } catch {} updateJump(); window.__hud?.(t("Chat text {n}%", { n: Math.round(z * 100) })); };
   apply(z); $("#zoom-hud").hidden = true;
   const inEditor = (el) => !!el?.closest?.("#ed-monaco, #editor, #ed-diff-host");
-  addEventListener("wheel", (e) => { if (!e.ctrlKey) return; e.preventDefault(); if (inEditor(e.target)) return; apply(z + (e.deltaY < 0 ? 0.05 : -0.05)); }, { passive: false, capture: true });
+  // while JS Study is open it takes the zoom for itself (reading text, or the code size where an editor is open)
+  const study = (step) => { if (!studyUI?.isOpen) return false; window.__hud?.(studyUI.zoomBy(step)); return true; };
+  addEventListener("wheel", (e) => { if (!e.ctrlKey) return; e.preventDefault(); if (study(e.deltaY < 0 ? 1 : -1)) return; if (inEditor(e.target)) return; apply(z + (e.deltaY < 0 ? 0.05 : -0.05)); }, { passive: false, capture: true });
   addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     const k = e.key; if (!["+", "=", "-", "_", "0"].includes(k)) return;
-    e.preventDefault(); if (inEditor(document.activeElement)) return;
+    e.preventDefault(); if (study(k === "0" ? 0 : k === "-" || k === "_" ? -1 : 1)) return; if (inEditor(document.activeElement)) return;
     apply(k === "0" ? 1 : z + (k === "-" || k === "_" ? -0.05 : 0.05));
   }, true);
 }

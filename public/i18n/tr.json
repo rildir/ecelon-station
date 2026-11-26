@@ -2072,5 +2072,7 @@
   "You learn more from one more try or a hint. The problem stays unsolved until your own code passes.": "Bir deneme daha ya da bir ipucu daha çok şey öğretir. Kendi kodun geçene kadar problem çözülmemiş sayılır.",
   "No problems yet": "Henüz problem yok",
   "Import a pack that has problems.": "Problemleri olan bir paket içe aktar.",
-  "Problem set": "Problemler"
+  "Problem set": "Problemler",
+  "Code size {n}px": "Kod boyutu {n}px",
+  "Text size {n}%": "Yazı boyutu %{n}"
 }

@@ -434,5 +434,24 @@ export function createStudy(ctx) {
     else if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && tab === "code" && !inEditor) { e.preventDefault(); runTask(); }
     else if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && tab === "prob" && !inEditor) { e.preventDefault(); prob.run(); }
   });
-  return { open, close, get isOpen() { return !root.hidden; } };
+  // Ctrl + wheel and Ctrl +/-/0 while the room is open (app.js hands them here). Reading panes zoom their content;
+  // where a code editor is open (Code, Problems) the editor's font grows instead, as CSS zoom would break the editor.
+  const ZOOM_KEY = "ecelon.studyZoom";
+  let zoom = 1; try { zoom = Number(localStorage.getItem(ZOOM_KEY)) || 1; } catch { /* storage off */ }
+  const applyZoom = () => { root.style.setProperty("--st-zoom", String(zoom)); };
+  applyZoom();
+  function zoomBy(step) { // step: +1, -1, or 0 for "back to normal"; returns the label to show
+    if (tab === "code" || tab === "prob") {
+      let px = 14; try { px = Number(localStorage.getItem("ecelon.practiceFont")) || 14; } catch { /* storage off */ }
+      px = step === 0 ? 14 : Math.min(40, Math.max(8, px + step));
+      try { localStorage.setItem("ecelon.practiceFont", String(px)); } catch { /* storage off */ }
+      ed?.updateOptions({ fontSize: px }); prob.setFont(px);
+      return t("Code size {n}px", { n: px });
+    }
+    zoom = step === 0 ? 1 : Math.min(2, Math.max(0.7, Math.round((zoom + step * 0.1) * 10) / 10));
+    try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch { /* storage off */ }
+    applyZoom();
+    return t("Text size {n}%", { n: Math.round(zoom * 100) });
+  }
+  return { open, close, zoomBy, get isOpen() { return !root.hidden; } };
 }

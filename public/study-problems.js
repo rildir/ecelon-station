@@ -137,5 +137,5 @@ export function createProblems(env) {
   }
   function dispose() { if (saveT) flush(); for (const m of models.values()) m.dispose(); models.clear(); ed?.dispose(); ed = null; built = false; last = null; }
 
-  return { open, click, dispose, nextOpen, run, get count() { return all().length; }, get solved() { return all().filter((x) => state()[x.id]?.solved).length; } };
+  return { open, click, dispose, nextOpen, run, setFont(px) { ed?.updateOptions({ fontSize: px }); }, get count() { return all().length; }, get solved() { return all().filter((x) => state()[x.id]?.solved).length; } };
 }
