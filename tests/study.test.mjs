@@ -1,7 +1,7 @@
 // The rules of the JS Study module (public/study-core.js): plain functions, no page and no clock.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { topicState, streak, pickWarmup, compareOutput, validatePack, mergePack, shuffleOptions, seeded, quizText, addDays, dayKey, allStates, nextSteps, emptyProgress, problemProgram, judgeProblem } from "../public/study-core.js";
+import { topicState, streak, pickWarmup, compareOutput, validatePack, mergePack, shuffleOptions, seeded, quizText, addDays, dayKey, allStates, nextSteps, emptyProgress, problemProgram, judgeProblem, pickTopicTest } from "../public/study-core.js";
 
 const T = (status = "yeni") => ({ id: "x", title: "X", status });
 let n = 0;
@@ -210,4 +210,19 @@ test("a problem is judged by its test calls: value, thrown error, promise, and a
   const ok = validatePack({ problems: [{ id: "p1", title: "T", level: 1, description: "d", starter: "function f() {}", tests: [{ call: "f()", expect: null }] }] });
   assert.ok(ok.ok); assert.equal(mergePack({ topics: [], hints: [], questions: [], tasks: [] }, ok.pack).report.problems.added, 1);
   assert.equal(validatePack({ problems: [{ id: "p1", title: "T", level: 4, description: "d", starter: "x", tests: [] }] }).ok, false);
+});
+
+test("taking a topic test again brings the questions not seen yet, then the missed ones, then the oldest", () => {
+  const content = { questions: Array.from({ length: 25 }, (_, i) => ({ id: "q" + i, topic: "x" })).concat([{ id: "other", topic: "y" }]) };
+  const first = pickTopicTest(content, "x", seeded(1), 10, []);
+  assert.equal(first.length, 10); assert.ok(first.every((q) => q.topic === "x"));
+  const answers = first.map((q, i) => ans(D(i), i !== 3, q.id)); // all seen, one of them wrong
+  const second = pickTopicTest(content, "x", seeded(2), 10, answers);
+  assert.ok(second.every((q) => !first.includes(q)), "the second test has none of the first test's questions");
+  const answers2 = answers.concat(second.map((q) => ans(D(20), true, q.id)));
+  const third = pickTopicTest(content, "x", seeded(3), 10, answers2);
+  const unseen = content.questions.filter((q) => q.topic === "x" && !first.includes(q) && !second.includes(q));
+  assert.deepEqual(third.slice(0, 5).map((q) => q.id).sort(), unseen.map((q) => q.id).sort()); // the 5 never asked
+  assert.equal(third[5].id, first[3].id); // then the one got wrong
+  assert.deepEqual(third.slice(6).map((q) => q.id), first.filter((_, i) => i !== 3).slice(0, 4).map((q) => q.id)); // then the oldest
 });

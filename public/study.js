@@ -208,8 +208,8 @@ export function createStudy(ctx) {
   function start(kind, topic) {
     const rng = Math.random; let qs;
     if (kind === "isinma") qs = core.pickWarmup(content(), progress().answers, today(), rng, 5);
-    else if (kind === "konu") qs = core.pickTopicTest(content(), topic, rng, 10);
-    else qs = core.pickMixed(content(), rng, 10);
+    else if (kind === "konu") qs = core.pickTopicTest(content(), topic, rng, 10, progress().answers);
+    else qs = core.pickMixed(content(), rng, 10, progress().answers);
     if (!qs.length) return ctx.toast(t("There are no questions yet. Import a pack."), "bad");
     quiz = { kind, topic, day: today(), i: 0, finished: false, qs: qs.map((q) => ({ q: core.shuffleOptions(q, rng), pick: null })) };
     setTab("quiz");

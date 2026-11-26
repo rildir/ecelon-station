@@ -94,8 +94,16 @@ export function pickWarmup(content, answers, today, rng = Math.random, n = 5) {
   take(shuffled(content.questions.filter((q) => !seen.has(q.id)), rng)); // what was answered today, if there is nothing else
   return picked;
 }
-export const pickTopicTest = (content, topicId, rng = Math.random, n = 10) => shuffled(content.questions.filter((q) => q.topic === topicId), rng).slice(0, n);
-export const pickMixed = (content, rng = Math.random, n = 10) => shuffled(content.questions, rng).slice(0, n);
+/** Questions in the order a new test should ask them: never answered first, then the ones got wrong last time, then the
+ *  rest by how long ago they were last answered (oldest first). Inside each group the order is random, so taking the test
+ *  again brings the questions not yet seen, and only when every one has been seen does it come round again. */
+export function freshFirst(list, answers = [], rng = Math.random) {
+  const last = lastAnswers(answers), at = (q) => { const a = last.get(q.id); return a ? Date.parse(a.tarih) || 0 : 0; };
+  const rank = (q) => { const a = last.get(q.id); return !a ? 0 : !a.dogruMu ? 1 : 2; };
+  return shuffled(list, rng).map((q, i) => ({ q, i, r: rank(q), t: at(q) })).sort((x, y) => x.r - y.r || (x.r === 2 ? x.t - y.t : 0) || x.i - y.i).map((x) => x.q);
+}
+export const pickTopicTest = (content, topicId, rng = Math.random, n = 10, answers = []) => freshFirst(content.questions.filter((q) => q.topic === topicId), answers, rng).slice(0, n);
+export const pickMixed = (content, rng = Math.random, n = 10, answers = []) => freshFirst(content.questions, answers, rng).slice(0, n);
 
 // ---------------------------------------------------------------- comparing output
 // A line that is an array or an object is compared by its structure: spaces and the way keys are quoted do not matter
