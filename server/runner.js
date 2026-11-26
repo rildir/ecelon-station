@@ -403,12 +403,14 @@ export function runClaude(agent, prompt, emit) {
 
 // One-off short answer without tools (e.g. commit message suggestion). Opens no session, writes nothing to the chat.
 export function oneShot(prompt, { cwd, model = "claude-haiku-5-5", timeout = 90000 } = {}) {
-  return new Promise((resolve, reject) => {
+  // no tools at all: an answer is text only. (Naming tools to deny breaks as Claude Code renames and checks them:
+  // newer versions refuse a deny list that names a tool they do not have, or that turns off the shell tool.)
+  const quiet = ["--tools", "", "--strict-mcp-config", "--no-chrome", "--no-session-persistence"];
+  const once = (extra) => new Promise((resolve, reject) => {
     const sp = spawnSpec(); if (!sp) return reject(new Error(t("Claude Code not found")));
     const needShell = sp.shell;
-    const quote = (a) => (/[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
-    const args = ["-p", "--model", model, "--output-format", "text", "--max-turns", "1",
-      "--disallowedTools", "Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task", "TodoWrite"];
+    const quote = (a) => (a === "" ? '""' : /[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
+    const args = ["-p", "--model", model, "--output-format", "text", "--max-turns", "1", ...extra];
     const child = spawn(sp.cmd, [...sp.pre, ...(needShell ? args.map(quote) : args)], { cwd, shell: needShell, env: childEnv(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let out = "", err = "";
     const timer = setTimeout(() => { killTree(child); reject(new Error(t("Timed out"))); }, timeout);
@@ -417,4 +419,6 @@ export function oneShot(prompt, { cwd, model = "claude-haiku-5-5", timeout = 900
     child.on("close", (code) => { clearTimeout(timer); code === 0 && out.trim() ? resolve(out.trim()) : reject(new Error((err || out || t("exit code {code}", { code })).trim().slice(0, 300))); });
     child.stdin.on("error", () => {}); child.stdin.end(prompt);
   });
+  // an older Claude Code that does not know one of these switches: ask once more without them
+  return once(quiet).catch((e) => (/unknown option|unrecognized|unexpected argument/i.test(e.message) ? once([]) : Promise.reject(e)));
 }
