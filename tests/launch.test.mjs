@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { cleanSteps, digest, planPrompt, portOpen } from "../server/launch.js";
+import http from "node:http";
+import { cleanSteps, digest, linksFor, planPrompt, portOpen } from "../server/launch.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "launch-"));
 const fe = path.join(tmp, "fe"), be = path.join(tmp, "be");
@@ -52,4 +53,14 @@ test("cleanSteps keeps only sound steps of known projects", () => {
 
 test("portOpen says no for a closed port", async () => {
   assert.equal(await portOpen(1, 300), false);
+});
+
+test("linksFor finds the address and an API's docs page, and does not mistake a single-page app for one", async () => {
+  const api = http.createServer((q, r) => { if (q.url === "/swagger") { r.writeHead(301, { location: "/swagger/index.html" }); return r.end(); } if (q.url === "/swagger/index.html") return r.end("<div id=swagger-ui></div>"); r.writeHead(404); r.end(); }).listen(0);
+  const spa = http.createServer((_q, r) => r.end("<app-root></app-root>")).listen(0);
+  await new Promise((r) => setTimeout(r, 50));
+  try {
+    assert.deepEqual(await linksFor(api.address().port), { url: `http://localhost:${api.address().port}/swagger`, docs: `http://localhost:${api.address().port}/swagger` });
+    assert.deepEqual(await linksFor(spa.address().port), { url: `http://localhost:${spa.address().port}/`, docs: null });
+  } finally { api.close(); spa.close(); }
 });

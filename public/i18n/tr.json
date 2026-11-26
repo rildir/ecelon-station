@@ -2114,5 +2114,7 @@
   "Not ready after {n} minutes": "{n} dakika sonra hâlâ hazır değil",
   "It stopped": "Durdu",
   "Waiting for port {port}…": "{port} portu bekleniyor…",
-  "Waiting for it to be ready…": "Hazır olması bekleniyor…"
+  "Waiting for it to be ready…": "Hazır olması bekleniyor…",
+  "Open {url}": "{url} adresini aç",
+  "API docs": "API dokümanı"
 }

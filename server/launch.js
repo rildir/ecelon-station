@@ -7,6 +7,8 @@
 // each step is started with the run panel's machinery, in order, and the next one waits until the step is ready
 // (its port answers, or its output shows an address). A step whose port already answers is left alone.
 import fs from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 import { t, langName } from "./i18n.js";
@@ -138,8 +140,52 @@ export function portOpen(port, ms = 800) {
   });
   return Promise.all([one("127.0.0.1"), one("::1")]).then(([a, b]) => a || b, () => false);
 }
+// ---------------------------------------------------------------- where a running step can be opened
+/** One GET on localhost; resolves { status, location, body } or null. Dev certificates are self-signed, so only here, on
+ *  this machine's loopback address, the certificate is not checked. */
+function probe(url, ms = 2500) {
+  return new Promise((res) => {
+    let over = false; const done = (v) => { if (!over) { over = true; clearTimeout(tm); res(v); } };
+    const tm = setTimeout(() => { try { req.destroy(); } catch { /* gone */ } done(null); }, ms);
+    let req;
+    try {
+      const lib = url.startsWith("https:") ? https : http;
+      req = lib.get(url, { rejectUnauthorized: false, headers: { accept: "text/html,*/*" } }, (r) => {
+        let body = ""; r.setEncoding("utf8");
+        r.on("data", (c) => { if (body.length < 20000) body += c; });
+        r.on("end", () => done({ status: r.statusCode, location: r.headers.location || "", body }));
+        r.on("error", () => done(null));
+      });
+      req.on("error", () => done(null));
+    } catch { done(null); }
+  });
+}
+const DOCS = ["/swagger", "/swagger/index.html", "/scalar", "/scalar/v1", "/api-docs", "/docs", "/api/docs", "/redoc"];
+const isDocs = (r) => r && ((r.status >= 200 && r.status < 300 && /swagger-ui|scalar|redoc|openapi/i.test(r.body)) || (r.status >= 300 && r.status < 400 && /swagger|scalar|docs|redoc/i.test(r.location)));
+/** The address of a port (http or https, whichever answers) and, for an API, its documentation page (Swagger, Scalar…). */
+export async function linksFor(port, known) {
+  let base = known ? known.replace(/\/+$/, "").replace("0.0.0.0", "localhost") : null;
+  if (!base) {
+    const [h, s] = await Promise.all([probe(`http://localhost:${port}/`), probe(`https://localhost:${port}/`)]);
+    // an https-only server often answers plain http with a redirect to https, or not at all
+    base = s && !(h && h.status < 300) ? `https://localhost:${port}` : h ? `http://localhost:${port}` : null;
+  }
+  if (!base) return { url: null, docs: null };
+  for (const p of DOCS) {
+    const r = await probe(base + p, 2000);
+    if (isDocs(r)) { const root = await probe(base + "/", 2000); return { url: root && root.status === 404 ? base + p : base + "/", docs: base + p }; } // an API with nothing at "/" opens on its docs
+  }
+  return { url: base + "/", docs: null };
+}
+function findLinks(team, s, st, known) {
+  if (!st.port && !known) return;
+  linksFor(st.port || Number(/:(\d+)/.exec(known)?.[1]), known).then(({ url, docs }) => {
+    if (states.get(team) !== s) return;
+    st.url = url; st.docs = docs; send(team);
+  }).catch(() => { /* no link then */ });
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const view = (team) => { const s = states.get(team); return s ? { state: s.state, error: s.error || null, at: s.at, steps: s.steps.map(({ label, project, port, state, run, note }) => ({ label, project, port, state, run, note })) } : { state: "none" }; };
+const view = (team) => { const s = states.get(team); return s ? { state: s.state, error: s.error || null, at: s.at, steps: s.steps.map(({ label, project, port, state, run, note, url, docs }) => ({ label, project, port, state, run, note, url, docs })) } : { state: "none" }; };
 const send = (team) => emit({ type: "launch", team, ...view(team) });
 
 export function status(team) {
@@ -157,7 +203,7 @@ export async function up(team, projects) {
     for (const st of s.steps) {
       if (states.get(team) !== s) return; // stopped meanwhile
       const p = projects.find((x) => x.team === st.team); if (!p) { st.state = "failed"; st.note = t("The project is no longer on the station"); break; }
-      if (st.port && await portOpen(st.port)) { st.state = "up"; st.note = t("Already running"); send(team); continue; }
+      if (st.port && await portOpen(st.port)) { st.state = "up"; st.note = t("Already running"); send(team); findLinks(team, s, st); continue; }
       st.state = "starting"; send(team);
       let r;
       try { r = runs.start({ team: st.team, cwd: p.cwd, cmd: st.cmd, dir: st.dir, label: st.label }); }
@@ -173,7 +219,7 @@ export async function up(team, projects) {
         await sleep(1000);
       }
       if (!ok) { st.state = "failed"; if (st.note === waitNote) st.note = t("Not ready after {n} minutes", { n: READY_MS / 60000 }); break; }
-      st.state = "up"; st.note = ""; send(team);
+      st.state = "up"; st.note = ""; send(team); findLinks(team, s, st, runs.get(r.id)?.url);
     }
    } catch (e) {
     // anything unexpected ends the launch visibly instead of leaving the button on "starting" for ever

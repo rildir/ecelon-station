@@ -54,7 +54,11 @@ export function createLaunch({ api, toast, openRun, projects }) {
     const s = cache.get(team) || {}, st = s.state || "none", steps = s.steps?.length ? s.steps : (s.plan?.steps || []).map((x) => ({ ...x, state: "waiting" }));
     menu.innerHTML =
       (st === "failed" && s.error ? `<p class="ln-err">${esc(s.error)}</p>` : "") +
-      (steps.length ? `<ol class="ln-steps">${steps.map((x) => `<li class="ls-${esc(x.state)}"><b>${DOT[x.state] || "○"}</b><span><strong>${esc(x.label)}</strong><em>${esc(x.project)}${x.port ? " · :" + x.port : ""}${x.note ? " · " + esc(x.note) : ""}</em></span></li>`).join("")}</ol>` : "") +
+      (steps.length ? `<ol class="ln-steps">${steps.map((x) => `<li class="ls-${esc(x.state)}"><b>${DOT[x.state] || "○"}</b><span>` +
+        (x.url ? `<button type="button" class="ln-open" data-url="${esc(x.url)}" title="${esc(t("Open {url}", { url: x.url }))}"><strong>${esc(x.label)}</strong><i>${esc(x.url.replace(/^https?:\/\//, "").replace(/\/$/, ""))} ↗</i></button>` : `<strong>${esc(x.label)}</strong>`) +
+        `<em>${esc(x.project)}${x.port ? " · :" + x.port : ""}${x.note ? " · " + esc(x.note) : ""}</em></span>` +
+        (x.docs ? `<button type="button" class="ln-docs" data-url="${esc(x.docs)}" title="${esc(t("Open {url}", { url: x.docs }))}">${esc(/scalar/i.test(x.docs) ? "Scalar" : /redoc/i.test(x.docs) ? "ReDoc" : /swagger/i.test(x.docs) ? "Swagger" : t("API docs"))} ↗</button>` : "") +
+        `</li>`).join("")}</ol>` : "") +
       `<div class="ln-acts">` +
       (st === "up" || st === "starting" ? `<button type="button" data-ln="down" class="danger">${esc(t("Stop"))}</button>` : "") +
       (st === "failed" ? `<button type="button" data-ln="up">${esc(t("Try again"))}</button>` : "") +
@@ -82,6 +86,8 @@ export function createLaunch({ api, toast, openRun, projects }) {
     toggleMenu(false); up();
   });
   menu.addEventListener("click", async (e) => {
+    const link = e.target.closest("[data-url]");
+    if (link) { toggleMenu(false); try { await api("/api/open-url", { method: "POST", body: { url: link.dataset.url } }); } catch (err) { toast(err.message, "bad"); } return; }
     const b = e.target.closest("[data-ln]"); if (!b) return;
     const what = b.dataset.ln; toggleMenu(false);
     if (what === "up") up();
