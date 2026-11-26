@@ -156,7 +156,7 @@ export function createLearn(env) {
         sec(t("A common mistake"), L.mistake ? `<p class="st-mist">${esc(L.mistake)}</p>` : "") +
         sec(t("Cheat sentences"), hints.length || notes.length ? `<ul class="st-list">${hints.map((h) => `<li>${esc(h.text)}</li>`).join("")}${notes.map((x) => `<li class="mine">${esc(x.text)}</li>`).join("")}</ul>` : "") +
         sec(t("How to say it"), L.say ? `<p class="st-say">${esc(L.say)}</p>` : "") +
-        `<section class="st-done"><h3>${esc(state.done ? t("You have read this lesson") : t("Finish the lesson"))}</h3>` +
+        `<section class="st-lessondone"><h3>${esc(state.done ? t("You have read this lesson") : t("Finish the lesson"))}</h3>` +
           `<p>${esc(qn ? t("Reading is half of it. Answer a few questions now, while it is fresh.") : t("There are no questions on this topic yet; the tutor can write some."))}</p>` +
           `<div class="st-q-b">` +
             (qn ? `<button type="button" class="btn primary" data-act="lessonquiz">${esc(state.done ? t("Quiz on this topic") : t("Finish and take the quiz"))}</button>` : "") +
