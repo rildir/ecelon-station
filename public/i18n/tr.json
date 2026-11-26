@@ -2038,5 +2038,9 @@
   "Give up": "Vazgeç",
   "Ask a follow-up question": "Devam sorusu sor",
   "Ask": "Sor",
-  "Try again": "Tekrar dene"
+  "Try again": "Tekrar dene",
+  "Right.": "Doğru.",
+  "Not quite.": "Tam değil.",
+  "Run the code first": "Önce kodu çalıştır",
+  "Answer the question first": "Önce soruyu cevapla"
 }

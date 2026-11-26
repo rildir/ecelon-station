@@ -164,6 +164,9 @@ test("a topic page (group, lesson) is kept when valid; a broken lesson is refuse
   const steps = validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: { steps: [{ title: "T", text: "x", code: "console.log(1);\n" }, { text: "y", snippet: "<div>" }] } }] });
   assert.deepEqual(steps.pack.topics[0].lesson.steps, [{ title: "T", text: "x", code: "console.log(1);" }, { text: "y", snippet: "<div>" }]); // code runs here, a snippet is only shown
   assert.equal(validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: { steps: [{ code: "no text" }] } }] }).ok, false);
+  const check = { ask: "Hangisi?", options: ["bir", "iki"], correct: 1, why: "çünkü" };
+  assert.deepEqual(validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: { steps: [{ text: "x", check }] } }] }).pack.topics[0].lesson.steps[0].check, check);
+  for (const bad of [{ ...check, correct: 2 }, { ...check, options: ["bir", "bir"] }, { ...check, why: "" }]) assert.equal(validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: { steps: [{ text: "x", check: bad }] } }] }).ok, false);
   const old = validatePack({ topics: [{ id: "a", title: "A", status: "yeni" }] }); // a topic without a page is still valid
   assert.ok(old.ok && !("lesson" in old.pack.topics[0]));
   for (const bad of [{ ...lesson, points: "x" }, { ...lesson, talk: [{ ask: "q" }] }, { ...lesson, summary: "" }, "metin"]) {

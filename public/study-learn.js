@@ -14,6 +14,8 @@ export function createLearn(env) {
   let reading = null;       // the topic whose lesson is open
   const edits = new Map();  // code the learner changed in the open lesson: cell key → text
   let pathScroll = 0;
+  const ran = new Set();      // steps of the open lesson whose code was run
+  const picked = new Map();   // steps of the open lesson whose question was answered: step → option
 
   const lessons = () => (env.progress().lessons ||= {});
   const groupsOf = () => {
@@ -108,7 +110,26 @@ export function createLearn(env) {
     const L = env.topicOf(reading)?.lesson || {};
     return key === "ex" ? L.example : L.steps?.[Number(key.slice(1))]?.code;
   };
-  const stepHtml = (x, i) => `<section class="st-step" id="st-step-${i}"><h4><b>${i + 1}</b>${esc(x.title || "")}</h4><p>${esc(x.text)}</p>${x.code ? cell("s" + i, x.code) : x.snippet ? env.codeBlock(x.snippet) : ""}</section>`;
+  // the question under a step: once answered it shows which option was right and why
+  const checkHtml = (c, i) => {
+    const mine = picked.get(i), done = mine !== undefined;
+    return `<div class="st-check" data-i="${i}"><p class="st-check-q">${esc(c.ask)}</p><div class="st-check-o">${c.options.map((o, n) =>
+      `<button type="button" data-act="checkpick" data-i="${i}" data-o="${n}" ${done ? "disabled" : ""} class="${done ? (n === c.correct ? "ok" : n === mine ? "bad" : "") : ""}">${esc(o)}</button>`).join("")}</div>` +
+      (done ? `<p class="st-check-w"><b>${esc(mine === c.correct ? t("Right.") : t("Not quite."))}</b> ${esc(c.why)}</p>` : "") + `</div>`;
+  };
+  const stepHtml = (x, i) => `<section class="st-step" id="st-step-${i}"><h4><b>${i + 1}</b>${esc(x.title || "")}</h4><p>${esc(x.text)}</p>${x.code ? cell("s" + i, x.code) : x.snippet ? env.codeBlock(x.snippet) : ""}${x.check ? checkHtml(x.check, i) : ""}</section>`;
+  // what still has to be done on the last open step before the next one opens: run its code, answer its question
+  const gate = (steps, shown) => {
+    const i = shown - 1, x = steps[i]; if (!x) return null;
+    if (x.code && !ran.has(i)) return t("Run the code first");
+    if (x.check && !picked.has(i)) return t("Answer the question first");
+    return null;
+  };
+  const moreHtml = (steps, shown) => {
+    const wait = gate(steps, shown);
+    return `<div class="st-more" id="st-more"><button type="button" class="btn primary" data-act="stepnext" ${wait ? "disabled" : ""}>${esc(wait || t("Got it, next step"))}</button><button type="button" class="st-link" data-act="stepall">${esc(t("Show all steps"))}</button></div>`;
+  };
+  const syncGate = () => { const tp = env.topicOf(reading), more = $("#st-more"); if (!tp || !more) return; const steps = tp.lesson.steps || []; more.outerHTML = moreHtml(steps, $("#st-steps").children.length); };
 
   function renderLesson(box) {
     const tp = env.topicOf(reading), L = tp.lesson || {}, st = env.states(), s = st[tp.id];
@@ -126,7 +147,7 @@ export function createLearn(env) {
       (L.summary ? `<p class="st-lead">${esc(L.summary)}</p>` : "") +
       (steps.length ? `<div class="st-prog" id="st-prog">${bar(shown, steps.length)}<small>${esc(t("Step {a} of {b}", { a: shown, b: steps.length }))}</small></div>` +
         `<div id="st-steps">${steps.slice(0, shown).map(stepHtml).join("")}</div>` +
-        (finished ? "" : `<div class="st-more"><button type="button" class="btn primary" data-act="stepnext">${esc(t("Got it, next step"))}</button><button type="button" class="st-link" data-act="stepall">${esc(t("Show all steps"))}</button></div>`) : "") +
+        (finished ? "" : moreHtml(steps, shown)) : "") +
       `<div id="st-rest" ${finished ? "" : "hidden"}>` +
         sec(t("Key points"), L.points?.length ? `<ul class="st-list">${L.points.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "") +
         sec(t("Example"), L.example ? cell("ex", L.example) : "") +
@@ -156,7 +177,7 @@ export function createLearn(env) {
   function openLesson(id, box) {
     if (!env.topicOf(id)) return;
     if (!reading) pathScroll = box.scrollTop;
-    reading = id; edits.clear();
+    reading = id; edits.clear(); ran.clear(); picked.clear();
     if (env.topicOf(id).lesson && !lessons()[id]) setLesson(id, { step: 0 });
     renderLesson(box); enter(box.firstElementChild); box.scrollTop = 0;
   }
@@ -168,7 +189,7 @@ export function createLearn(env) {
     for (let i = had; i < upto; i++) host.insertAdjacentHTML("beforeend", stepHtml(steps[i], i));
     const fresh = host.children[had];
     $("#st-prog").innerHTML = `${bar(upto, steps.length)}<small>${esc(t("Step {a} of {b}", { a: upto, b: steps.length }))}</small>`;
-    if (upto >= steps.length && to >= steps.length - 1) { $(".st-more", box)?.remove(); const rest = $("#st-rest"); rest.hidden = false; enter(rest); }
+    if (upto >= steps.length && to >= steps.length - 1) { $("#st-more")?.remove(); const rest = $("#st-rest"); rest.hidden = false; enter(rest); } else syncGate();
     if (fresh) { enter(fresh); fresh.scrollIntoView({ behavior: "smooth", block: "start" }); }
   }
 
@@ -183,6 +204,7 @@ export function createLearn(env) {
       case "stepall": revealNext(box, true); return true;
       case "lessondone": setLesson(reading, { done: true, step: env.topicOf(reading).lesson?.steps?.length || 0 }); { const top = box.scrollTop; renderLesson(box); box.scrollTop = top; } return true;
       case "lessonquiz": setLesson(reading, { done: true, step: env.topicOf(reading).lesson?.steps?.length || 0 }); env.startQuiz("konu", reading); return true;
+      case "checkpick": { const i = Number(el.dataset.i), c = env.topicOf(reading)?.lesson?.steps?.[i]?.check; if (!c || picked.has(i)) return true; picked.set(i, Number(el.dataset.o)); el.closest(".st-check").outerHTML = checkHtml(c, i); syncGate(); return true; }
       case "celledit": { const c = el.closest(".st-cell"), key = c.dataset.cell; edits.set(key, codeOf(key)); c.outerHTML = cell(key, codeOf(key)); const ta = $(`.st-cell[data-cell="${key}"] textarea`); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); return true; }
       case "cellreset": { const c = el.closest(".st-cell"), key = c.dataset.cell; edits.delete(key); c.outerHTML = cell(key, codeOf(key)); return true; }
       case "cellrun": {
@@ -190,6 +212,7 @@ export function createLearn(env) {
         if (ta) edits.set(key, ta.value);
         el.disabled = true; const res = await env.run(code); el.disabled = false;
         const out = $(".st-real", c); if (out) { out.hidden = false; out.innerHTML = env.runOut(res); enter(out); }
+        if (key[0] === "s") { ran.add(Number(key.slice(1))); syncGate(); }
         return true;
       }
       default: return false;
@@ -209,6 +232,6 @@ export function createLearn(env) {
     renderLearn(box, focusGroup) { if (reading && env.topicOf(reading) && focusGroup === undefined) { renderLesson(box); } else { reading = null; renderPath(box, focusGroup); } },
     click, keydown, input,
     get reading() { return reading; },
-    leave() { reading = null; edits.clear(); pathScroll = 0; },
+    leave() { reading = null; edits.clear(); ran.clear(); picked.clear(); pathScroll = 0; },
   };
 }

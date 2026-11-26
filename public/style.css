@@ -2262,3 +2262,11 @@ body.wt-chat #btn-toproject { display: none !important; }
   .st-prow { grid-template-columns: minmax(0, 1fr) 80px 48px; gap: 10px; } .st-rows { grid-template-columns: minmax(0, 1fr); } .st-prog { top: -16px; }
 }
 @media (prefers-reduced-motion: reduce) { .st-in, .st-wait i { animation: none; } .st-bar i { transition: none; } }
+.st-check { display: grid; gap: 8px; margin-top: 6px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .08); }
+.st-check-q { margin: 0; font-weight: 600; color: #fff; }
+.st-check-o { display: grid; gap: 6px; }
+.st-check-o button { padding: 9px 12px; border: 1px solid var(--rim); border-radius: 8px; background: none; color: var(--lav); font: 13.5px/1.45 var(--f-ui); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.st-check-o button:hover:not(:disabled) { background: var(--hull-2); border-color: rgba(255, 255, 255, .28); } .st-check-o button:disabled { cursor: default; opacity: .6; }
+.st-check-o button.ok { opacity: 1; border-color: #4fd18a; background: rgba(79, 209, 138, .1); color: #fff; } .st-check-o button.bad { opacity: 1; border-color: #ff7b7b; background: rgba(255, 123, 123, .1); }
+.st-check-w { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--lav-2); } .st-check-w b { color: #fff; }
+.st-more .btn:disabled { opacity: .55; cursor: default; }
