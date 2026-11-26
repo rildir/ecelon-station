@@ -108,7 +108,7 @@ export function createLearn(env) {
     const L = env.topicOf(reading)?.lesson || {};
     return key === "ex" ? L.example : L.steps?.[Number(key.slice(1))]?.code;
   };
-  const stepHtml = (x, i) => `<section class="st-step" id="st-step-${i}"><h4><b>${i + 1}</b>${esc(x.title || "")}</h4><p>${esc(x.text)}</p>${x.code ? cell("s" + i, x.code) : ""}</section>`;
+  const stepHtml = (x, i) => `<section class="st-step" id="st-step-${i}"><h4><b>${i + 1}</b>${esc(x.title || "")}</h4><p>${esc(x.text)}</p>${x.code ? cell("s" + i, x.code) : x.snippet ? env.codeBlock(x.snippet) : ""}</section>`;
 
   function renderLesson(box) {
     const tp = env.topicOf(reading), L = tp.lesson || {}, st = env.states(), s = st[tp.id];
