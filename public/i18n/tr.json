@@ -2073,5 +2073,6 @@
   "Import a pack that has problems.": "Problemleri olan bir paket içe aktar.",
   "Problem set": "Problemler",
   "Code size {n}px": "Kod boyutu {n}px",
-  "Text size {n}%": "Yazı boyutu %{n}"
+  "Text size {n}%": "Yazı boyutu %{n}",
+  "Claude Code's sign-in has expired. Open a terminal on this computer, run claude, then type /login and sign in again.": "Claude Code'un oturumu sona ermiş. Bu bilgisayarda bir terminal aç, claude yaz, ardından /login yazıp yeniden giriş yap."
 }

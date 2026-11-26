@@ -96,7 +96,11 @@ export function studyRouter() {
       if (kind === "talk") { const g = cleanGrade(pickJson(out)); return g ? res.json({ grade: g }) : res.status(502).json({ error: t("The tutor's answer could not be read. Try again.") }); }
       if (kind === "more") { const qs = cleanQuestions(pickJson(out), String(b.topic)); return qs.length ? res.json({ questions: qs }) : res.status(502).json({ error: t("The tutor's answer could not be read. Try again.") }); }
       res.json({ text: out.slice(0, 4000) });
-    } catch (e) { res.status(502).json({ error: t("The tutor could not answer: {msg}", { msg: e.message }) }); }
+    } catch (e) {
+      // a sign-in that ran out is the user's to renew; say how instead of passing Claude Code's message on as it is
+      if (/OAuth|authenticat|not logged in|log ?in again|\b401\b|invalid api key/i.test(e.message)) return res.status(401).json({ error: t("Claude Code's sign-in has expired. Open a terminal on this computer, run claude, then type /login and sign in again.") });
+      res.status(502).json({ error: t("The tutor could not answer: {msg}", { msg: e.message }) });
+    }
     finally { busy--; }
   });
 
