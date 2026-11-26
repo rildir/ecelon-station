@@ -6,8 +6,8 @@ const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 const ago = (ts) => { const s = (Date.now() - ts) / 1000; return s < 60 ? t("just now") : s < 3600 ? t("{n} min ago", { n: Math.floor(s / 60) }) : t("{n} h ago", { n: Math.floor(s / 3600) }); };
 
 // ANSI colors → HTML (only basic SGR: color, bold, reset)
-const COLORS = ["#4b5275", "#ff6b81", "#7ee2a8", "#ffd27a", "#6fb6ff", "#d79bff", "#6fe3ff", "#e6e8f5"];
-const BRIGHT = ["#8f8ab4", "#ff8095", "#9ff2c4", "#ffe29a", "#9ccfff", "#e4b8ff", "#9ff0ff", "#ffffff"];
+const COLORS = ["#55534e", "#ff6b81", "#7ee2a8", "#ffd27a", "#6fb6ff", "#d79bff", "#6fe3ff", "#e6e8f5"];
+const BRIGHT = ["#8c8981", "#ff8095", "#9ff2c4", "#ffe29a", "#9ccfff", "#e4b8ff", "#9ff0ff", "#ffffff"];
 function ansiLine(line) {
   let out = "", open = false, st = {};
   const style = () => { const css = []; if (st.fg) css.push(`color:${st.fg}`); if (st.bold) css.push("font-weight:700"); if (st.dim) css.push("opacity:.6"); return css.join(";"); };
