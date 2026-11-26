@@ -17,6 +17,7 @@ import * as tasks from "./tasks.js";
 import * as worktrees from "./worktrees.js";
 import * as fsx from "./files.js";
 import * as runs from "./runs.js";
+import * as launch from "./launch.js";
 import { listAgents, getAgent, addAgent, addMember, teamOf, ensureFullTeams, updateAgent, attachChat, dropSessionChats, removeAgent, reorderAgents, MODELS, EFFORTS, PERMISSIONS } from "./agents.js";
 import { ROLES, roleOf, publicRoles } from "./roles.js";
 import { runClaude, resolveClaude, claudeMissingHint, uploadsDir, oneShot, claudeVersion, cliInfo, authStatus, FALLBACK_MODEL } from "./runner.js";
@@ -584,7 +585,8 @@ app.post("/api/agents/:id/open", (req, res) => {
 
 // ---- Git panel (like Source Control in VS Code): driven only by the user's buttons
 // ---- Run panel: commands, processes, problems
-runs.init(broadcast);
+runs.init((ev) => { broadcast(ev); if (ev.type === "run" && ev.status === "exited") launch.onRunEnded(ev.id); });
+launch.init(broadcast);
 // on shutdown: the processes in the Run panel and the running Claude sessions are closed too (no orphan processes)
 function shutdown(sig) {
   if (shuttingDown) return; shuttingDown = true;
@@ -617,6 +619,14 @@ app.post("/api/open-url", (req, res) => {
 });
 app.delete("/api/agents/:id/run/:rid", (req, res) => { runs.remove(req.params.rid); res.json({ ok: true }); });
 app.get("/api/runs/summary", (_req, res) => res.json(runs.summary()));
+// ---- Launch: start a project and what it needs with one click (server/launch.js)
+const stationProjects = () => { const seen = new Map(); for (const a of listAgents()) { const team = a.team || a.id; if (!a.solo && !seen.has(team) && a.cwd && fs.existsSync(a.cwd)) seen.set(team, { team, name: leadOfTeam(a).name || a.name, cwd: leadOfTeam(a).cwd || a.cwd }); } return [...seen.values()]; };
+app.get("/api/agents/:id/launch", runRoute(async (_l, team) => launch.status(team)));
+app.post("/api/agents/:id/launch/discover", runRoute(async (l, team) => { const all = stationProjects(), me = all.find((p) => p.team === team) || { team, name: l.name, cwd: l.cwd }; return { draft: await launch.discover(me, all) }; }));
+app.put("/api/agents/:id/launch/plan", runRoute(async (_l, team, b) => ({ plan: launch.approve(team, b.steps, stationProjects()) })));
+app.delete("/api/agents/:id/launch/plan", runRoute(async (_l, team) => { launch.forget(team); return { ok: true }; }));
+app.post("/api/agents/:id/launch/up", runRoute(async (_l, team) => launch.up(team, stationProjects())));
+app.post("/api/agents/:id/launch/down", runRoute(async (_l, team) => launch.down(team)));
 app.get("/api/agents/:id/problems", runRoute(async (_l, team) => ({ groups: runs.problemsFor(team) })));
 
 // ---- code editor: project files

@@ -8,6 +8,7 @@ import { createStudy } from "./study.js";
 import { createGit } from "./gitui.js";
 import { createEditor } from "./editor.js";
 import { createRuns } from "./runui.js";
+import { createLaunch } from "./launchui.js";
 import { t, LANGS, currentLang, locale } from "./i18n.js";
 
 // ================= helpers =================
@@ -339,6 +340,11 @@ const runUI = createRuns({
 async function refreshRunCounts() { try { runCounts = await api("/api/runs/summary"); } catch {} renderRunBadge(); }
 function renderRunBadge(a = current()) { const n = a ? runCounts[teamKey(a)] || 0 : 0; $("#run-badge").textContent = n ? `● ${n}` : ""; $("#btn-run").classList.toggle("live", !!n); }
 function openRun(a = current(), opts) { if (a) runUI.open(leadOf(a), opts); }
+// "Start up" button at the top right: the project and what it needs, with one click (public/launchui.js)
+const launchUI = createLaunch({
+  api, toast, openRun: (a) => openRun(a),
+  projects: () => { const m = new Map(); for (const x of agents) if (!x.solo && !x.wt && !m.has(teamKey(x))) { const l = leadOf(x); m.set(teamKey(x), { team: teamKey(x), name: l.name }); } return [...m.values()]; },
+});
 $("#btn-run").onclick = () => openRun();
 refreshRunCounts();
 $("#btn-code").onclick = () => openCode();
@@ -1271,6 +1277,7 @@ function fillHeader(a) {
   $("#perm-name").textContent = perm[1];
   $("#perm-btn").classList.toggle("risky", perm[0] === "bypassPermissions");
   $("#perm-btn").title = perm[2];
+  launchUI.show(a);
   renderContext(a); renderLinked(a); renderTeamTabs(a); renderReqsBadge(a); renderTasksBadge(a); renderGitBadge(a); renderRunBadge(a);
   const team = teamOf(a);
   $("#prompt").placeholder = team.length > 1 && roleOf(a) === "dev" ? t("Write to the team; the lead hands work to the tester or analyst when needed") : team.length > 1 ? t("Talk directly to {role}", { role: roleLabel(a) }) : t("What do you want from this agent?  @ file · # document");
@@ -2300,6 +2307,7 @@ function connectWS() {
     if (ev.type === "git") { gitUI.onEvent(ev); gitSoon(); return; }
     if (ev.type === "fs") { edUI.onFs(ev); return; }
     if (ev.type === "run-out") { runUI.onEvent(ev); return; }
+    if (ev.type === "launch") { launchUI.onEvent(ev); return; }
     if (ev.type === "run") { runUI.onEvent(ev); if (ev.status) { if (ev.status === "running") runCounts[ev.team] = (runCounts[ev.team] || 0); refreshRunCounts(); } return; }
     if (ev.type === "tasks") { tasksUI.onEvent(ev); overviewSoon(); if (current() && teamKey(current()) === ev.team) renderTasksBadge(); return; }
     if (ev.type === "reqs") { reqsUI.onEvent(ev); overviewSoon(); if (current() && teamKey(current()) === ev.team) renderReqsBadge(); return; }
