@@ -1,20 +1,20 @@
 /* Ecelon Station — istasyon konsolu
-   Koyu, nötr bir gövde (mavi tonu yok), sıcak gri yazı ve tek vurgu: kehribar ikaz rengi.
+   Kapkara bir gövde, gri yazı. Ofis görünümünde vurgu kehribar, kurumsal görünümde beyaz.
    Düğmeler oyun arayüzü gibi kalın ve basılabilir; sohbet konuşma balonlarıyla akar. */
 :root {
-  --void: #0f0f0e;
-  --hull: #181817;
-  --hull-2: #201f1e;
-  --hull-3: #2a2927;
-  --rim: #353330;
-  --lav: #edebe6;
-  --lav-2: #bdbab2;
-  --lav-3: #8c8981;
+  --void: #000000;
+  --hull: #0b0b0b;
+  --hull-2: #131313;
+  --hull-3: #1c1c1c;
+  --rim: #262626;
+  --lav: #f2f2f2;
+  --lav-2: #b0b0b0;
+  --lav-3: #7a7a7a;
   --orange: #f6a23a;
   --orange-deep: #c8731a;
   --orange-ink: #2a1600;
   --cyan: #5fd0ff;
-  --ink: #151514;
+  --ink: #050505;
   --st-idle: #aeaca9;
   --st-thinking: #ffb020;
   --st-tool: #2fb8ff;
@@ -1792,16 +1792,16 @@ body.live #panel, body.live #topbar, body.live #inbox, body.live #mapctl, body.l
 #au-csv { text-decoration: none; }
 
 /* =====================================================================================================
-   Professional view (body.pro). Same station, a different face: graphite and one amber accent, hairlines instead of glow, numbers in mono, square corners. No scene, no characters, no sound.
+   Professional view (body.pro). Same station, a different face: black and white, hairlines instead of glow, numbers in mono, square corners. No scene, no characters, no sound.
    The whole app is re-skinned through the colour tokens; the roster (#board) is its own layout.
    ===================================================================================================== */
 body.pro {
-  --void: #0c0c0b; --hull: #141413; --hull-2: #1b1b1a; --hull-3: #242322; --rim: #2d2c2a;
-  --lav: #ecebe7; --lav-2: #b5b3ac; --lav-3: #807e77;
-  --orange: #f6a23a; --orange-deep: #d98920; --orange-ink: #1f1200; --cyan: #d9d5cb;
-  --st-thinking: #f6a23a; --st-tool: #f6a23a;
+  --void: #000000; --hull: #0a0a0a; --hull-2: #111111; --hull-3: #1a1a1a; --rim: #1f1f1f;
+  --lav: #f5f5f5; --lav-2: #a8a8a8; --lav-3: #707070;
+  --orange: #ffffff; --orange-deep: #d4d4d4; --orange-ink: #000000; --cyan: #d4d4d4;
+  --st-thinking: #ffb020; --st-tool: #e5e5e5;
   --f-display: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
-  --ring: 0 0 0 3px rgba(246, 177, 86, .45);
+  --ring: 0 0 0 3px rgba(255, 255, 255, .32);
   background: var(--void);
 }
 body.pro #scene, body.pro #legend, body.pro #mapctl, body.pro #zoom-hud, body.pro #live, body.pro #replay, body.pro #standup, body.pro #empty-hint, body.pro #tooltip, body.pro #btn-sfx, body.pro .prop-tip { display: none !important; }
@@ -1814,7 +1814,7 @@ body.pro .btn { border-radius: 6px; box-shadow: none; text-transform: none; }
 body.pro .btn.primary { background: var(--orange); color: var(--orange-ink); }
 body.pro .btn.primary:hover { background: var(--orange-deep); }
 /* people are not drawn: every member is the mark (two squares) on a plain tile */
-body.pro .portrait { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='7' y='7' width='11' height='11' fill='%23f6b156'/%3E%3Crect x='14' y='14' width='11' height='11' fill='%23e9ebf1' fill-opacity='.9'/%3E%3C/svg%3E") !important; background-color: var(--hull-3); background-size: 100%; background-position: center; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--rim); }
+body.pro .portrait { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='7' y='7' width='11' height='11' fill='%23ffffff'/%3E%3Crect x='14' y='14' width='11' height='11' fill='%23e9ebf1' fill-opacity='.9'/%3E%3C/svg%3E") !important; background-color: var(--hull-3); background-size: 100%; background-position: center; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--rim); }
 body.pro .portrait.busy::after { border-width: 2px; border-radius: 8px; }
 body.pro .wm-name { letter-spacing: 0; }
 
@@ -1853,7 +1853,7 @@ body.pro .wm-name { letter-spacing: 0; }
 .bd-m.busy .bd-mono { color: #fff; background: var(--orange); box-shadow: none; animation: bdpulse 1.6s ease-in-out infinite; } .bd-m.busy em { color: var(--cyan); }
 .bd-m.wait .bd-mono { color: #1d1400; background: #ffb020; box-shadow: none; } .bd-m.wait em { color: #ffb020; }
 .bd-m.wait.k-error .bd-mono { color: #fff; background: var(--st-error); } .bd-m.wait.k-error em { color: #ff8fa1; }
-@keyframes bdpulse { 50% { box-shadow: 0 0 0 4px rgba(246, 177, 86, .22); } }
+@keyframes bdpulse { 50% { box-shadow: 0 0 0 4px rgba(255, 255, 255, .22); } }
 .bd-ev { display: grid !important; gap: 6px; min-width: 0; } .bd-ev span { font-size: 12px; color: var(--lav-3); } .bd-ev span b { font: 600 12.5px var(--f-mono); color: var(--lav); } .bd-ev em { font-style: normal; color: #ff8fa1; }
 .bd-bar { display: flex; height: 6px; gap: 2px; } .bd-bar u { display: block; background: var(--hull-3); min-width: 0; } .bd-bar u.ok { background: var(--st-done); } .bd-bar u.bad { background: var(--st-error); } .bd-bar u.warn { background: #ffb020; }
 .bd-ev:hover .bd-bar u:not(.ok):not(.bad):not(.warn) { background: var(--rim); }
@@ -1917,7 +1917,7 @@ body.pro:not(.has-agent):not(.focus) #panel { display: none; }
 body.pro:not(.has-agent):not(.focus) { --panel-w: 0px; }
 body.pro #board { padding-left: max(28px, calc((100% - 1240px) / 2)); padding-right: max(28px, calc((100% - 1240px) / 2)); }
 /* professional view: wherever a member's picture is set (any screen, any list), the mark is shown instead */
-body.pro [style*="chars/previews"] { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='7' y='7' width='11' height='11' fill='%23f6b156'/%3E%3Crect x='14' y='14' width='11' height='11' fill='%23e9ebf1' fill-opacity='.9'/%3E%3C/svg%3E") !important; background-color: var(--hull-3) !important; background-size: 100% !important; background-position: center !important; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--rim); }
+body.pro [style*="chars/previews"] { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='7' y='7' width='11' height='11' fill='%23ffffff'/%3E%3Crect x='14' y='14' width='11' height='11' fill='%23e9ebf1' fill-opacity='.9'/%3E%3C/svg%3E") !important; background-color: var(--hull-3) !important; background-size: 100% !important; background-position: center !important; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--rim); }
 /* professional view: every remaining screen — containers square, no pressed shadows, documents read on a dark sheet */
 body.pro .msg.perm, body.pro .lib-list, body.pro #lv-preview, body.pro #library section, body.pro .li-vers, body.pro .li-file, body.pro #lk-list, body.pro #bc-agents, body.pro .tk-col, body.pro .tk-card, body.pro .rq-row, body.pro .rq-banner, body.pro .li-doc, body.pro .py-wrap, body.pro .b2-wait, body.pro .b2-wcard, body.pro .b2-row, body.pro .pop, body.pro .mp-item, body.pro .todo-card, body.pro .team-card, body.pro .tc, body.pro .git-file, body.pro .run-card, body.pro .cli-warn, body.pro .list-head, body.pro #agent-list li, body.pro .li-main, body.pro .kbadge, body.pro .lv-head, body.pro .ll-item { border-radius: 6px; }
 body.pro .msg.perm { box-shadow: none; border: 1px solid var(--rim); }
@@ -1950,7 +1950,7 @@ body.pro .rs-unclear { background: var(--lav-3); }
 .mz-fill { position: absolute; inset: 0; z-index: -1; display: flex; flex-direction: column; justify-content: flex-end; }
 .mz-fill i { display: block; transition: height 1s cubic-bezier(.2, .7, .2, 1); transition-delay: calc(var(--i) * 45ms); }
 .mz-done { height: var(--done); background: color-mix(in srgb, var(--orange) 24%, var(--hull)); box-shadow: inset 0 2px 0 var(--orange); }
-.mz-claimed { height: var(--claimed); background: repeating-linear-gradient(135deg, rgba(246, 177, 86, .34) 0 1.5px, transparent 1.5px 10px); border-top: 1px solid rgba(246, 177, 86, .55); }
+.mz-claimed { height: var(--claimed); background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .34) 0 1.5px, transparent 1.5px 10px); border-top: 1px solid rgba(255, 255, 255, .55); }
 .mz.rise .mz-fill i { height: 0; }
 .mz-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .mz-name { font: 700 19px/1.12 "Bricolage Grotesque", var(--f-ui); letter-spacing: -.02em; overflow-wrap: anywhere; } .mz-t.m .mz-name { font-size: 24px; } .mz-t.l .mz-name { font-size: 34px; letter-spacing: -.03em; }
@@ -1963,7 +1963,7 @@ body.pro .rs-unclear { background: var(--lav-3); }
 .mz-note { font: 500 13px/1.4 var(--f-ui); color: rgba(242, 244, 248, .86); } .mz-t.bare .mz-note { color: #9c9a95; } .mz-t.l .mz-note { font-size: 14.5px; }
 .mz-t.s .mz-note br + *, .mz-t.s .mz-note { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .mz-key { display: flex; gap: 22px; flex-wrap: wrap; margin: 16px 0 0; font: 500 13px/1 var(--f-ui); color: #9c9a95; } .mz-key span { display: inline-flex; align-items: center; gap: 8px; }
-.mz-key i { width: 14px; height: 14px; border: 1px solid #383735; } .mz-key .k-done { background: color-mix(in srgb, var(--orange) 24%, var(--hull)); border-color: var(--orange); } .mz-key .k-claimed { background: repeating-linear-gradient(135deg, rgba(246, 177, 86, .6) 0 2px, transparent 2px 6px); border-color: rgba(246, 177, 86, .6); }
+.mz-key i { width: 14px; height: 14px; border: 1px solid #383735; } .mz-key .k-done { background: color-mix(in srgb, var(--orange) 24%, var(--hull)); border-color: var(--orange); } .mz-key .k-claimed { background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .6) 0 2px, transparent 2px 6px); border-color: rgba(255, 255, 255, .6); }
 @media (prefers-reduced-motion: reduce) { .mz-fill i { transition: none; } .mz-pips i.busy { animation: none; } }
 .mz-note, .mz-pct { text-shadow: 0 0 10px rgba(10, 12, 17, .55); } .mz-t.m .mz-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .mz-t:not(.bare) .mz-note > span { background: rgba(10, 12, 17, .8); -webkit-box-decoration-break: clone; box-decoration-break: clone; padding: 2px 7px; line-height: 1.75; color: #f2f4f8; }
@@ -2189,7 +2189,7 @@ body.wt-chat #btn-toproject { display: none !important; }
 .st-bigres { font: 700 34px/1.1 var(--f-ui); color: #fff; }
 .st-pickrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; } .st-pickrow select { min-width: 0; max-width: 100%; }
 .st-saymine { width: 100%; box-sizing: border-box; resize: vertical; min-height: 90px; padding: 10px 12px; border: 1px solid var(--rim); border-radius: 10px; background: var(--hull); color: inherit; font: 13.5px/1.55 var(--f-ui); }
-.st-tutor { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--rim); border-left: 3px solid var(--blue, #f6b156); border-radius: 0 10px 10px 0; background: rgba(255, 255, 255, .03); }
+.st-tutor { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--rim); border-left: 3px solid var(--blue, var(--orange)); border-radius: 0 10px 10px 0; background: rgba(255, 255, 255, .03); }
 .st-tutor h4 { margin: 0 0 6px; font: 700 13px/1.4 var(--f-ui); color: #fff; } .st-tutor h5 { margin: 10px 0 2px; font: 600 12.5px/1.4 var(--f-ui); color: var(--lav-3); }
 .st-tutor p { margin: 0; font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; } .st-tutor ul { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.6; }
 .st-lesson { max-width: 780px !important; display: grid; gap: 14px; } .st-lesson > * { min-width: 0; }

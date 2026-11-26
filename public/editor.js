@@ -21,9 +21,9 @@ export function loadMonaco() {
         m.editor.defineTheme("ecelon", { base: "vs-dark", inherit: true, rules: [
           { token: "comment", foreground: "8c8981", fontStyle: "italic" }, { token: "keyword", foreground: "f6a23a" }, { token: "string", foreground: "8ff0bd" },
           { token: "number", foreground: "ffcf91" }, { token: "type", foreground: "c4a7f5" }, { token: "delimiter", foreground: "bdbab2" } ],
-          colors: { "editor.background": "#121211", "editor.lineHighlightBackground": "#1c1c1b", "editorLineNumber.foreground": "#5e5c57", "editorLineNumber.activeForeground": "#bdbab2",
+          colors: { "editor.background": "#050505", "editor.lineHighlightBackground": "#111111", "editorLineNumber.foreground": "#5e5c57", "editorLineNumber.activeForeground": "#bdbab2",
             "editor.selectionBackground": "#3a3835", "editorCursor.foreground": "#f6a23a", "editorIndentGuide.background1": "#232948", "editorWidget.background": "#1c1c1b",
-            "editorGutter.background": "#121211", "minimap.background": "#121211", "scrollbarSlider.background": "#4a474266", "diffEditor.insertedTextBackground": "#2fd27f22", "diffEditor.removedTextBackground": "#ff4d6a26" } });
+            "editorGutter.background": "#050505", "minimap.background": "#050505", "scrollbarSlider.background": "#4a474266", "diffEditor.insertedTextBackground": "#2fd27f22", "diffEditor.removedTextBackground": "#ff4d6a26" } });
         ok(m);
       }, no);
     };
