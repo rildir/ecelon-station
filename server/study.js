@@ -11,7 +11,7 @@ import { tutorPrompt, pickJson, cleanGrade, cleanQuestions, TUTOR_MODEL } from "
 
 const FILE = dataPath("study.json");
 const CAP = { answers: 20000, attempts: 5000, sessions: 5000, talks: 5000, notes: 500, drafts: 300 };
-const blank = () => ({ v: 1, content: { topics: [], hints: [], questions: [], tasks: [] }, progress: emptyProgress() });
+const blank = () => ({ v: 1, content: { topics: [], hints: [], questions: [], tasks: [], problems: [] }, progress: emptyProgress() });
 
 function read() {
   try {
@@ -73,6 +73,11 @@ export function studyRouter() {
     if (b.lessons && typeof b.lessons === "object" && !Array.isArray(b.lessons)) {
       d.progress.lessons = Object.fromEntries(Object.entries(b.lessons).filter(([k, v]) => ID.test(k) && v && typeof v === "object").slice(0, 2000)
         .map(([k, v]) => [k, { step: Number.isInteger(v.step) && v.step >= 0 && v.step <= 99 ? v.step : 0, done: v.done === true, at: when(v.at) || "" }]));
+    }
+    // problems: whether each was solved, how many tries it took, and the code as it was left
+    if (b.problems && typeof b.problems === "object" && !Array.isArray(b.problems)) {
+      d.progress.problems = Object.fromEntries(Object.entries(b.problems).filter(([k, v]) => ID.test(k) && v && typeof v === "object").slice(0, 3000)
+        .map(([k, v]) => [k, { solved: v.solved === true, tries: Number.isInteger(v.tries) && v.tries >= 0 ? Math.min(v.tries, 9999) : 0, at: when(v.at) || "", code: text(v.code, 20000), seen: v.seen === true }]));
     }
     write(d); res.json({ ok: true });
   });

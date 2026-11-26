@@ -52,6 +52,8 @@ export function createLearn(env) {
   function renderToday(box) {
     if (!env.hasContent()) { box.innerHTML = env.empty(); return; }
     const st = env.states(), p = env.progress(), steps = core.nextSteps(env.content(), p, st, env.today()).map(describe);
+    const np = env.nextProblem?.();
+    if (np) steps.push({ title: np.title, sub: t("A problem to solve") + " · " + ({ 1: t("Easy"), 2: t("Medium"), 3: t("Hard") })[np.level], cta: t("Solve it"), attrs: `data-act="problem" data-id="${esc(np.id)}"` });
     const [main, ...rest] = steps, all = env.content().topics;
     const sk = core.streak(p.sessions, env.today()), right = p.answers.filter((x) => x.dogruMu).length;
     const settled = all.filter((x) => st[x.id].status === "oturdu").length;

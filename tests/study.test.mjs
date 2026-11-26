@@ -1,7 +1,7 @@
 // The rules of the JS Study module (public/study-core.js): plain functions, no page and no clock.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { topicState, streak, pickWarmup, compareOutput, validatePack, mergePack, shuffleOptions, seeded, quizText, addDays, dayKey, allStates, nextSteps, emptyProgress } from "../public/study-core.js";
+import { topicState, streak, pickWarmup, compareOutput, validatePack, mergePack, shuffleOptions, seeded, quizText, addDays, dayKey, allStates, nextSteps, emptyProgress, problemProgram, judgeProblem } from "../public/study-core.js";
 
 const T = (status = "yeni") => ({ id: "x", title: "X", status });
 let n = 0;
@@ -195,4 +195,19 @@ test("the next step: warm-up when something is due, then the lesson left half-wa
   assert.equal(kinds({ answers: wrong })[0], "warmup"); // yesterday's wrong answer comes before any lesson
   const done = kinds({ answers: wrong, sessions: [{ id: "s", tur: "isinma", tarih: "2026-01-10T08:00:00Z", gun: "2026-01-10", dogru: 1, toplam: 1 }] });
   assert.ok(!done.includes("warmup")); // today's warm-up is done: it is not suggested again
+});
+
+test("a problem is judged by its test calls: value, thrown error, promise, and a run that never got to the tests", async () => {
+  const tests = [{ call: "topla(1, 2)", expect: 3 }, { call: "topla(2, 2)", expect: 5 }, { call: "patla()", expect: 1 }, { call: "Promise.resolve([1, { a: 2 }])", expect: [1, { a: 2 }] }, { call: "bos()", expect: null }];
+  const lines = [], log = console.log; console.log = (...a) => lines.push({ kind: "log", text: a.join(" ") });
+  try { (0, eval)(problemProgram('function topla(a, b) { return a + b; }\nfunction patla() { throw new TypeError("x"); }\nfunction bos() {}\nconsole.log("benim satırım");', tests)); await new Promise((r) => setTimeout(r, 30)); } finally { console.log = log; }
+  const v = judgeProblem(tests, lines);
+  assert.deepEqual(v.rows.map((r) => r.ok), [true, false, false, true, false]);
+  assert.equal(v.rows[1].got, "4"); assert.equal(v.rows[2].error, "TypeError: x"); assert.equal(v.rows[4].got, "undefined"); // undefined is not null
+  assert.equal(v.passed, 2); assert.equal(v.ok, false); assert.deepEqual(v.output, ["benim satırım"]);
+  const none = judgeProblem(tests, [{ kind: "error", text: "SyntaxError" }], true); // the code never reached the tests
+  assert.equal(none.ran, false); assert.equal(none.passed, 0); assert.equal(none.timedOut, true); assert.deepEqual(none.errors, ["SyntaxError"]);
+  const ok = validatePack({ problems: [{ id: "p1", title: "T", level: 1, description: "d", starter: "function f() {}", tests: [{ call: "f()", expect: null }] }] });
+  assert.ok(ok.ok); assert.equal(mergePack({ topics: [], hints: [], questions: [], tasks: [] }, ok.pack).report.problems.added, 1);
+  assert.equal(validatePack({ problems: [{ id: "p1", title: "T", level: 4, description: "d", starter: "x", tests: [] }] }).ok, false);
 });

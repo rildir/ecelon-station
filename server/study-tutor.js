@@ -28,10 +28,16 @@ export function tutorPrompt(kind, c, d = {}, lang = "en") {
       (d.matched ? `In at most 130 words: say what is good, then one or two concrete improvements a senior reviewer would ask for (naming, edge cases, a cleaner idiom). Do not rewrite the whole solution.`
         : `In at most 130 words: point to the exact cause of the difference and give a hint that lets the learner fix it themselves. Do NOT give the corrected code.`);
   }
+  if (kind === "problem") {
+    const k = (c.problems || []).find((x) => x.id === d.problemId); if (!k || !String(d.code || "").trim()) return null;
+    return head + `The learner is solving a practice problem.\n\nProblem: ${k.title}\n${k.description}\n\nThe learner's code:\n${cut(d.code, 6000)}\n\nTest results:\n${cut(d.results, 2500) || "(not run)"}\nAll tests passed: ${d.solved ? "yes" : "no"}\n\n` +
+      (d.solved ? `In at most 140 words: give the time and space complexity of this solution, then one concrete improvement or a different approach worth knowing. Do not rewrite the whole solution.`
+        : `In at most 130 words: say what is going wrong, pointing at the failing case, and give ONE hint that moves the learner forward. Do NOT give the corrected code or the full algorithm.`);
+  }
   if (kind === "follow") {
     // a follow-up question on an answer the tutor gave: the same facts again, then the talk so far
     const base = d.base && typeof d.base === "object" ? d.base : null, ask = String(d.ask || "").trim();
-    if (!base || !["why", "talk", "code"].includes(base.kind) || !ask) return null;
+    if (!base || !["why", "talk", "code", "problem"].includes(base.kind) || !ask) return null;
     const first = tutorPrompt(base.kind, c, base, lang); if (!first) return null;
     const facts = first.slice(head.length).split("\n\n").slice(0, -1).join("\n\n"); // everything but the instruction of the first job
     const talk = (Array.isArray(d.thread) ? d.thread : []).slice(-6).filter((m) => m && typeof m.text === "string").map((m) => (m.who === "me" ? "Learner: " : "Tutor: ") + cut(m.text, 1500)).join("\n\n");

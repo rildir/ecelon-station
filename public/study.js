@@ -10,6 +10,7 @@ import { FRAME } from "./practice.js";
 import * as core from "./study-core.js";
 import { createLearn } from "./study-learn.js";
 import { createTutor } from "./study-tutor.js";
+import { createProblems } from "./study-problems.js";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -94,16 +95,16 @@ export function createStudy(ctx) {
     root.hidden = false; ctx.onOpen?.();
     try { data = await ctx.api("/api/study"); } catch (e) { ctx.toast(t("Could not open JS Study: {msg}", { msg: e.message }), "bad"); close(); return; }
     if (!sel || !topicOf(sel)) sel = null;
-    if (!opened) { opened = true; try { tab = localStorage.getItem("ecelon.study.tab") || "today"; } catch { tab = "today"; } if (tab === "code") tab = "today"; }
+    if (!opened) { opened = true; try { tab = localStorage.getItem("ecelon.study.tab") || "today"; } catch { tab = "today"; } if (tab === "code" || tab === "prob") tab = "today"; }
     setTab(tab);
   }
   function close() {
-    if (saveT) flushDrafts(); runner?.dispose(); runner = null;
+    if (saveT) flushDrafts(); prob.dispose(); runner?.dispose(); runner = null;
     for (const m of models.values()) m.dispose(); models.clear(); ed?.dispose(); ed = null; taskId = null; // nothing of the module is left running
     root.hidden = true; ctx.onClose?.();
   }
   // The room has four places: Today, Learn, Practice (quiz, say it, code) and Notes. Each keeps where it was scrolled.
-  const PANES = ["today", "learn", "quiz", "say", "code", "tips"], PRACTICE = ["quiz", "say", "code"], scrolls = new Map();
+  const PANES = ["today", "learn", "quiz", "say", "code", "prob", "tips"], PRACTICE = ["quiz", "say", "code", "prob"], scrolls = new Map();
   let practice = "quiz";
   function setTab(name, focus, quiet) {
     if (!PANES.includes(name)) name = "today";
@@ -117,12 +118,12 @@ export function createStudy(ctx) {
     $("#st-sub").hidden = top !== "practice";
     for (const p of PANES) $("#st-" + p).hidden = p !== name;
     const pane = $("#st-" + name);
-    if (!quiet) ({ today: () => learn.renderToday(pane), learn: () => learn.renderLearn(pane, focus), quiz: renderQuiz, say: renderSay, code: openCode, tips: renderTips })[name]();
+    if (!quiet) ({ today: () => learn.renderToday(pane), learn: () => learn.renderLearn(pane, focus), quiz: renderQuiz, say: renderSay, code: openCode, prob: () => prob.open(focus), tips: renderTips })[name]();
     if (changed) { pane.classList.remove("st-in"); void pane.offsetWidth; pane.classList.add("st-in"); if (name !== "learn" || focus === undefined) pane.scrollTop = name === "today" ? 0 : scrolls.get(name) || 0; }
     renderStrip();
   }
   const empty = () => `<div class="lib-empty"><b>${esc(t("No content yet"))}</b><p>${esc(t("Import a content pack (a JSON file) to get topics, questions and tasks."))}</p><button type="button" class="btn primary sm" data-act="import">${esc(t("Import pack"))}</button></div>`;
-  const hasContent = () => content().topics.length || content().questions.length || content().tasks.length;
+  const hasContent = () => content().topics.length || content().questions.length || content().tasks.length || (content().problems || []).length;
 
   // ---------------------------------------------------------------- 1. today, the path and the lessons (study-learn.js)
   function reason(s) {
@@ -139,6 +140,13 @@ export function createStudy(ctx) {
     saveLessons: () => save("/meta", { lessons: progress().lessons }, "PUT"),
     show: (name, focus) => setTab(name, focus, focus === undefined && name === "learn"),
     startQuiz: (kind, topic) => start(kind, topic),
+    nextProblem: () => prob.nextOpen(),
+  });
+  const prob = createProblems({
+    $: (q, r = root) => $(q, r), content, progress, codeBlock, loadMonaco, tutorUI, toast: ctx.toast, confirmBox: ctx.confirmBox,
+    run: (code) => (runner ||= createRunner(root)).run(code),
+    saveProblems: () => save("/meta", { problems: progress().problems }, "PUT"),
+    isOpen: () => !root.hidden,
   });
   // new questions for the chosen topic: the tutor writes them, each is run in the sandbox, and one is kept only when
   // its real output is among its options (the right option is then set from the real output, not from what was claimed)
@@ -356,6 +364,8 @@ export function createStudy(ctx) {
   root.addEventListener("click", async (e) => {
     const el = e.target.closest("[data-act],[data-tab],.st-task,.st-opt,.st-pip"); if (!el || !root.contains(el)) return;
     if (el.dataset.tab) { setTab(el.dataset.tab === "practice" ? practice : el.dataset.tab); return; }
+    if (el.dataset.act === "problem") { setTab("prob", el.dataset.id); return; }
+    if (el.dataset.act && prob.click(el.dataset.act, el)) return;
     if (el.dataset.act && await learn.click(el.dataset.act, el, $("#st-" + tab))) return;
     if (el.classList.contains("st-task")) { if (el.dataset.id !== taskId) selectTask(el.dataset.id); return; }
     if (el.classList.contains("st-opt")) { answer(Number(el.dataset.i)); return; }
@@ -422,6 +432,7 @@ export function createStudy(ctx) {
     const inEditor = e.target instanceof Element && !!e.target.closest(".monaco-editor");
     if (e.key === "Escape" && !e.defaultPrevented && !inEditor) { e.preventDefault(); close(); }
     else if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && tab === "code" && !inEditor) { e.preventDefault(); runTask(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && tab === "prob" && !inEditor) { e.preventDefault(); prob.run(); }
   });
   return { open, close, get isOpen() { return !root.hidden; } };
 }

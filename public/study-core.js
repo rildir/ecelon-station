@@ -3,7 +3,7 @@
 // touching the system clock. The page (study.js) and the server (study.js there) both use this one file.
 //
 // What the module keeps, apart from each other:
-//   content   topics, hints, questions, tasks      (a pack; imported, never worn out by use)
+//   content   topics, hints, questions, tasks, problems   (a pack; imported, never worn out by use)
 //   progress  answers, attempts, sessions, notes   (what the user did; stays on this computer in data/study.json)
 
 export const STATUSES = ["oturdu", "orta", "zayif", "yeni"]; // what a pack may say about a topic; "tekrar" is only ever computed
@@ -127,8 +127,8 @@ const ID = /^[A-Za-z0-9_.-]{1,80}$/;
 const LIMITS = { list: 3000, title: 200, code: 6000, ask: 300, option: 300, why: 1500, desc: 4000, line: 400, lines: 100, hint: 600, taskHints: 20, group: 60, summary: 900, point: 320, points: 12, example: 3000, mistake: 700, say: 1800, talks: 10, talkAsk: 300, talkAnswer: 1800, steps: 16, stepText: 1200, stepCode: 2500, stepTitle: 120 };
 const isStr = (x) => typeof x === "string";
 const norm = (s) => String(s).replace(/\r\n/g, "\n");
-const emptyContent = () => ({ topics: [], hints: [], questions: [], tasks: [] });
-export const emptyProgress = () => ({ answers: [], attempts: [], sessions: [], talks: [], notes: [], drafts: {}, lessons: {} });
+const emptyContent = () => ({ topics: [], hints: [], questions: [], tasks: [], problems: [] });
+export const emptyProgress = () => ({ answers: [], attempts: [], sessions: [], talks: [], notes: [], drafts: {}, lessons: {}, problems: {} });
 
 /** Check a pack (the parsed JSON) against the schema. `existing` is the content already kept: a question may belong to
  *  a topic that is not in the pack but is already there. Returns { ok: true, pack } with only the known fields, or
@@ -137,7 +137,7 @@ export function validatePack(raw, existing = emptyContent(), t = plain) {
   const errors = [], bad = (where, msg) => { errors.push(where + ": " + msg); };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, errors: [t("The pack must be a JSON object with topics, hints, questions and tasks.")] };
   if (raw.version !== undefined && raw.version !== 1) bad("version", t("must be 1"));
-  const pack = emptyContent(), lists = ["topics", "hints", "questions", "tasks"];
+  const pack = emptyContent(), lists = ["topics", "hints", "questions", "tasks", "problems"];
   for (const k of lists) {
     if (raw[k] === undefined) continue;
     if (!Array.isArray(raw[k])) { bad(k, t("must be a list")); continue; }
@@ -200,6 +200,20 @@ export function validatePack(raw, existing = emptyContent(), t = plain) {
     const expectedOutput = list("expectedOutput", LIMITS.lines), hints = list("hints", LIMITS.taskHints);
     if (errors.length === before) pack.tasks.push({ id: k.id, topic: k.topic, title, description, expectedOutput, hints }); });
 
+  // problems: a function to write, judged by test calls (each a JavaScript expression and the value it must give)
+  const prid = ids("problems");
+  (raw.problems || []).forEach((k, i) => { const where = prid(k, i); if (!where) return; const before = errors.length;
+    const title = str(where, k, "title", LIMITS.title), description = str(where, k, "description", LIMITS.desc);
+    if (![1, 2, 3].includes(k.level)) bad(where, t("level must be 1 (easy), 2 (medium) or 3 (hard)"));
+    if (!isStr(k.starter) || !k.starter.trim() || k.starter.length > 4000) bad(where, t("starter must be the code the editor opens with"));
+    const okTest = (x) => x && typeof x === "object" && isStr(x.call) && x.call.trim() && x.call.length <= 600 && x.expect !== undefined && JSON.stringify(x.expect).length <= 3000;
+    if (!Array.isArray(k.tests) || !k.tests.length || k.tests.length > 40 || !k.tests.every(okTest)) bad(where, t("tests must be a list of 1 to 40 items, each with call and expect"));
+    const hints = k.hints === undefined ? [] : k.hints;
+    if (!Array.isArray(hints) || hints.length > LIMITS.taskHints || !hints.every((h) => isStr(h) && h.trim())) bad(where, t("hints must be a list of texts"));
+    for (const [key, max] of [["solution", 8000], ["explain", 4000], ["tag", 40]]) if (k[key] !== undefined && (!isStr(k[key]) || !k[key].trim() || k[key].length > max)) bad(where, t("{key} must be a text of at most {n} characters", { key, n: max }));
+    if (errors.length === before) pack.problems.push({ id: k.id, title, level: k.level, ...(k.tag ? { tag: norm(k.tag).trim() } : {}), description, starter: norm(k.starter).replace(/\s+$/, ""), tests: k.tests.map((x) => ({ call: norm(x.call).trim(), expect: x.expect })),
+      hints: hints.map(norm), ...(k.solution ? { solution: norm(k.solution).replace(/\s+$/, "") } : {}), ...(k.explain ? { explain: norm(k.explain) } : {}) }); });
+
   if (!errors.length && !lists.some((k) => pack[k].length)) errors.push(t("The pack is empty: it has no topics, hints, questions or tasks."));
   return errors.length ? { ok: false, errors } : { ok: true, pack };
 }
@@ -207,8 +221,8 @@ export function validatePack(raw, existing = emptyContent(), t = plain) {
 /** Put a checked pack into the content: the same id is overwritten, a new id is added. Hints have no id: the same
  *  topic and text is the same hint. Returns the new content and what happened; the old content is not touched. */
 export function mergePack(content, pack) {
-  const next = { topics: [...content.topics], hints: [...content.hints], questions: [...content.questions], tasks: [...content.tasks] }, report = {};
-  for (const k of ["topics", "questions", "tasks"]) {
+  const next = { topics: [...content.topics], hints: [...content.hints], questions: [...content.questions], tasks: [...content.tasks], problems: [...(content.problems || [])] }, report = {};
+  for (const k of ["topics", "questions", "tasks", "problems"]) {
     const r = report[k] = { added: 0, updated: 0 };
     for (const item of pack[k]) { const i = next[k].findIndex((x) => x.id === item.id); if (i < 0) { next[k].push(item); r.added++; } else { if (JSON.stringify(next[k][i]) !== JSON.stringify(item)) r.updated++; next[k][i] = item; } }
   }
@@ -243,6 +257,9 @@ export const SCHEMA_TEXT = `Write a JSON content pack for a JavaScript study too
   "hints":     [ { "topic": "closure", "text": "one short memorable sentence" } ],
   "questions": [ { "id": "q-closure-2", "topic": "closure", "code": "console.log(1);", "ask": "What does the console print?",
                    "options": ["A", "B", "C", "D"], "correct": 2, "why": "one or two sentences" } ],
+  "problems":  [ { "id": "p-two-sum", "title": "Two sum", "level": 1, "tag": "arrays", "description": "what to write",
+                   "starter": "function twoSum(nums, target) {\\n  \\n}", "tests": [ { "call": "twoSum([2, 7, 11], 9)", "expect": [0, 1] } ],
+                   "hints": ["first hint"], "solution": "a reference solution", "explain": "why it works" } ],
   "tasks":     [ { "id": "y4", "topic": "closure", "title": "Y4: a counter", "description": "what to write",
                    "expectedOutput": ["1", "[1,2]"], "hints": ["first hint", "second hint"] } ]
 }
@@ -275,4 +292,31 @@ export function nextSteps(content, p, states, today) {
   if (weak[0]) out.push({ kind: "topic", id: weak[0].id });
   if (content.questions.length && (warmDone || !out.some((x) => x.kind === "warmup"))) out.push({ kind: answeredToday ? "mixed" : "warmup-plain" });
   return out;
+}
+
+// ---------------------------------------------------------------- problems: running the tests of one
+export const TEST_MARK = "__ECELON_TESTS__";
+/**
+ * The code that is run for a problem: the learner's code, then every test call in turn. Each call is awaited (so a
+ * function may return a promise) and its value, or the error it threw, is printed on one marked line as JSON.
+ */
+export function problemProgram(code, tests) {
+  const calls = tests.map((x) => `async () => (${x.call})`).join(",\n  ");
+  return `${code}\n;(async () => {\n  const __tests = [\n  ${calls}\n  ];\n  const __out = [];\n  for (const __f of __tests) {\n    try { const __v = await __f(); __out.push({ v: __v === undefined ? "undefined" : JSON.stringify(__v) }); }\n    catch (__e) { __out.push({ e: String((__e && __e.name ? __e.name + ": " : "") + (__e && __e.message !== undefined ? __e.message : __e)) }); }\n  }\n  console.log(${JSON.stringify(TEST_MARK)} + JSON.stringify(__out));\n})();`;
+}
+/**
+ * The verdict on a run. `lines` are the console lines ({ kind, text }); the marked one holds the test results, the
+ * rest is the learner's own output. A test passes when its value, as JSON, equals the expected value's JSON.
+ */
+export function judgeProblem(tests, lines, timedOut = false) {
+  const mark = lines.find((l) => (l.kind === "log" || l.kind === "info") && l.text.startsWith(TEST_MARK));
+  const own = lines.filter((l) => l !== mark && l.kind !== "result");
+  let got = null; try { got = mark ? JSON.parse(mark.text.slice(TEST_MARK.length)) : null; } catch { got = null; }
+  const rows = tests.map((x, i) => {
+    const want = JSON.stringify(x.expect), r = Array.isArray(got) ? got[i] : null;
+    if (!r) return { call: x.call, want, got: null, error: null, ok: false };
+    return r.e !== undefined ? { call: x.call, want, got: null, error: String(r.e), ok: false } : { call: x.call, want, got: String(r.v), error: null, ok: r.v === want };
+  });
+  const errors = own.filter((l) => l.kind === "error" || l.kind === "throw").map((l) => l.text);
+  return { rows, passed: rows.filter((r) => r.ok).length, total: rows.length, ok: rows.length > 0 && rows.every((r) => r.ok), ran: Array.isArray(got), timedOut, errors, output: own.filter((l) => l.kind === "log" || l.kind === "info" || l.kind === "warn").map((l) => l.text) };
 }
