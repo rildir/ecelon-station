@@ -1,7 +1,7 @@
 // The rules of the JS Study module (public/study-core.js): plain functions, no page and no clock.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { topicState, streak, pickWarmup, compareOutput, validatePack, mergePack, shuffleOptions, seeded, quizText, addDays, dayKey, allStates } from "../public/study-core.js";
+import { topicState, streak, pickWarmup, compareOutput, validatePack, mergePack, shuffleOptions, seeded, quizText, addDays, dayKey, allStates, nextSteps, emptyProgress } from "../public/study-core.js";
 
 const T = (status = "yeni") => ({ id: "x", title: "X", status });
 let n = 0;
@@ -176,4 +176,17 @@ test("merging a pack with a page keeps the topic's place and replaces its page",
   assert.deepEqual(m.content.topics.map((x) => x.id), ["a", "b"]);
   assert.equal(m.content.topics[1].lesson.summary, "özet");
   assert.equal(m.report.topics.updated, 1);
+});
+
+test("the next step: warm-up when something is due, then the lesson left half-way, then the first unread lesson", () => {
+  const content = { topics: [{ id: "a", title: "A", status: "yeni", lesson: { summary: "x", steps: [{ text: "1" }, { text: "2" }] } }, { id: "b", title: "B", status: "yeni", lesson: { summary: "y" } }, { id: "c", title: "C", status: "yeni" }],
+    questions: [{ id: "q1", topic: "a", code: "1", ask: "?", options: ["1", "2"], correct: 0, why: "w" }], hints: [], tasks: [] };
+  const kinds = (p) => nextSteps(content, { ...emptyProgress(), ...p }, allStates(content, p.answers || [], "2026-01-10"), "2026-01-10").map((s) => s.kind + (s.id ? ":" + s.id : "") + (s.resume ? ":resume" : ""));
+  assert.deepEqual(kinds({}), ["lesson:a", "warmup-plain"]); // nothing yet: start the first lesson
+  assert.deepEqual(kinds({ lessons: { a: { step: 1, done: false, at: "2026-01-09T10:00:00Z" } } }), ["lesson:a:resume", "lesson:b", "warmup-plain"]);
+  assert.deepEqual(kinds({ lessons: { a: { step: 2, done: true }, b: { step: 0, done: true } } }), ["warmup-plain"]); // c has no lesson to read
+  const wrong = [{ id: "x", questionId: "q1", topic: "a", tarih: "2026-01-09T10:00:00Z", gun: "2026-01-09", dogruMu: false, secilen: "2" }];
+  assert.equal(kinds({ answers: wrong })[0], "warmup"); // yesterday's wrong answer comes before any lesson
+  const done = kinds({ answers: wrong, sessions: [{ id: "s", tur: "isinma", tarih: "2026-01-10T08:00:00Z", gun: "2026-01-10", dogru: 1, toplam: 1 }] });
+  assert.ok(!done.includes("warmup")); // today's warm-up is done: it is not suggested again
 });

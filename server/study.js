@@ -70,6 +70,10 @@ export function studyRouter() {
     if (b.drafts && typeof b.drafts === "object" && !Array.isArray(b.drafts)) {
       d.progress.drafts = Object.fromEntries(Object.entries(b.drafts).filter(([k]) => ID.test(k)).slice(0, CAP.drafts).map(([k, v]) => [k, { code: text(v?.code, 20000), tahmin: text(v?.tahmin, 2000) }]));
     }
+    if (b.lessons && typeof b.lessons === "object" && !Array.isArray(b.lessons)) {
+      d.progress.lessons = Object.fromEntries(Object.entries(b.lessons).filter(([k, v]) => ID.test(k) && v && typeof v === "object").slice(0, 2000)
+        .map(([k, v]) => [k, { step: Number.isInteger(v.step) && v.step >= 0 && v.step <= 99 ? v.step : 0, done: v.done === true, at: when(v.at) || "" }]));
+    }
     write(d); res.json({ ok: true });
   });
 

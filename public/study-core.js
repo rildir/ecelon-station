@@ -128,7 +128,7 @@ const LIMITS = { list: 3000, title: 200, code: 6000, ask: 300, option: 300, why:
 const isStr = (x) => typeof x === "string";
 const norm = (s) => String(s).replace(/\r\n/g, "\n");
 const emptyContent = () => ({ topics: [], hints: [], questions: [], tasks: [] });
-export const emptyProgress = () => ({ answers: [], attempts: [], sessions: [], talks: [], notes: [], drafts: {} });
+export const emptyProgress = () => ({ answers: [], attempts: [], sessions: [], talks: [], notes: [], drafts: {}, lessons: {} });
 
 /** Check a pack (the parsed JSON) against the schema. `existing` is the content already kept: a question may belong to
  *  a topic that is not in the pack but is already there. Returns { ok: true, pack } with only the known fields, or
@@ -246,3 +246,29 @@ Rules: every id is unique and uses only letters, digits, - _ . ; status is one o
 a question has 2 to 6 different options and "correct" is the 0-based index of the right one; a hint's topic is a topic id or "genel";
 expectedOutput is what console.log prints, one item per line (arrays and objects are compared by structure, spaces do not matter).
 The topics' order is the learning order; group, lesson and every part of a lesson are optional. Any list may be left out. The same id as before overwrites that item.`;
+
+/** Whether a topic's lesson counts as read: marked done, or it has no lesson to read. */
+export const lessonDone = (topic, lessons) => !topic.lesson || lessons?.[topic.id]?.done === true;
+
+/**
+ * What to do next, in order of use: today's warm-up when something is due, the lesson that was left half-way, the first
+ * lesson not read yet, a weak topic, a mixed quiz. Returns every step that applies; the first one is the suggestion.
+ * `p` is the progress, `states` what allStates returned, `today` a day key.
+ */
+export function nextSteps(content, p, states, today) {
+  const out = [], lessons = p.lessons || {}, topics = content.topics, has = (id) => content.questions.some((q) => q.topic === id);
+  const answeredToday = p.answers.some((a) => a.gun === today), warmDone = p.sessions.some((x) => x.tur === "isinma" && x.gun === today);
+  // a topic counts as due or weak here only once it has been asked: the starting status of a pack is not the learner's own result
+  const asked = (x, status) => states[x.id]?.status === status && states[x.id].total > 0 && has(x.id);
+  const due = topics.filter((x) => asked(x, "tekrar")), weak = topics.filter((x) => asked(x, "zayif"));
+  const lastWrong = new Map(); for (const a of p.answers) lastWrong.set(a.questionId, a);
+  const wrongBefore = [...lastWrong.values()].filter((a) => !a.dogruMu && a.gun < today).length;
+  if (!warmDone && p.answers.length && (wrongBefore || due.length || weak.length)) out.push({ kind: "warmup", wrong: wrongBefore, due: due.length, weak: weak.length });
+  const open = topics.filter((x) => x.lesson && lessons[x.id] && !lessons[x.id].done && lessons[x.id].step > 0).sort((a, b) => String(lessons[b.id].at || "").localeCompare(String(lessons[a.id].at || "")));
+  if (open[0]) out.push({ kind: "lesson", id: open[0].id, step: lessons[open[0].id].step, resume: true });
+  const fresh = topics.find((x) => x.lesson && !lessons[x.id]?.done && x.id !== open[0]?.id);
+  if (fresh) out.push({ kind: "lesson", id: fresh.id, step: 0, resume: false });
+  if (weak[0]) out.push({ kind: "topic", id: weak[0].id });
+  if (content.questions.length && (warmDone || !out.some((x) => x.kind === "warmup"))) out.push({ kind: answeredToday ? "mixed" : "warmup-plain" });
+  return out;
+}

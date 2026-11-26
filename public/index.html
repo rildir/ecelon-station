@@ -378,16 +378,21 @@
     <button type="button" class="icon-btn" data-act="close" data-i18n-attr="title,aria-label" title="Back (Esc)" aria-label="Back (Esc)"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
     <div class="lib-title"><h2 data-i18n>JS Study</h2><span data-i18n>Questions, coding tasks and notes. Your progress stays on this computer.</span></div>
     <div id="st-tabs" class="tk-filter" role="tablist">
-      <button type="button" role="tab" class="chip on" data-tab="map" aria-selected="true" data-i18n>Topics</button>
-      <button type="button" role="tab" class="chip" data-tab="quiz" aria-selected="false" data-i18n>Quiz</button>
-      <button type="button" role="tab" class="chip" data-tab="say" aria-selected="false" data-i18n>Say it</button>
-      <button type="button" role="tab" class="chip" data-tab="code" aria-selected="false" data-i18n>Code</button>
-      <button type="button" role="tab" class="chip" data-tab="tips" aria-selected="false" data-i18n>Cheat sheet</button>
+      <button type="button" role="tab" class="chip on" data-tab="today" aria-selected="true" data-i18n>Today</button>
+      <button type="button" role="tab" class="chip" data-tab="learn" aria-selected="false" data-i18n>Learn</button>
+      <button type="button" role="tab" class="chip" data-tab="practice" aria-selected="false" data-i18n>Practice</button>
+      <button type="button" role="tab" class="chip" data-tab="tips" aria-selected="false" data-i18n>Notes</button>
     </div>
     <div class="rq-actions"><button type="button" id="st-import" class="btn ghost sm" data-i18n>Import pack</button></div>
   </header>
   <div class="st-body">
-    <div id="st-map" class="st-pane"></div>
+    <div id="st-sub" class="st-sub" role="tablist" hidden>
+      <button type="button" role="tab" data-tab="quiz" aria-selected="true" data-i18n>Quiz</button>
+      <button type="button" role="tab" data-tab="say" aria-selected="false" data-i18n>Say it</button>
+      <button type="button" role="tab" data-tab="code" aria-selected="false" data-i18n>Code</button>
+    </div>
+    <div id="st-today" class="st-pane"></div>
+    <div id="st-learn" class="st-pane" hidden></div>
     <div id="st-quiz" class="st-pane" hidden></div>
     <div id="st-say" class="st-pane" hidden></div>
     <div id="st-code" class="st-pane st-codepane" hidden>

@@ -28,6 +28,16 @@ export function tutorPrompt(kind, c, d = {}, lang = "en") {
       (d.matched ? `In at most 130 words: say what is good, then one or two concrete improvements a senior reviewer would ask for (naming, edge cases, a cleaner idiom). Do not rewrite the whole solution.`
         : `In at most 130 words: point to the exact cause of the difference and give a hint that lets the learner fix it themselves. Do NOT give the corrected code.`);
   }
+  if (kind === "follow") {
+    // a follow-up question on an answer the tutor gave: the same facts again, then the talk so far
+    const base = d.base && typeof d.base === "object" ? d.base : null, ask = String(d.ask || "").trim();
+    if (!base || !["why", "talk", "code"].includes(base.kind) || !ask) return null;
+    const first = tutorPrompt(base.kind, c, base, lang); if (!first) return null;
+    const facts = first.slice(head.length).split("\n\n").slice(0, -1).join("\n\n"); // everything but the instruction of the first job
+    const talk = (Array.isArray(d.thread) ? d.thread : []).slice(-6).filter((m) => m && typeof m.text === "string").map((m) => (m.who === "me" ? "Learner: " : "Tutor: ") + cut(m.text, 1500)).join("\n\n");
+    return head + facts + `\n\nThe conversation so far:\n${talk || "(nothing yet)"}\n\nThe learner now asks: ${cut(ask, 600)}\n\n` +
+      `Answer this question in at most 150 words. Stay on this topic; if a tiny code example makes it clearer, show one (at most 8 lines). If the question shows a wrong idea, name it and correct it.`;
+  }
   if (kind === "more") {
     const tp = topicOf(d.topic); if (!tp) return null;
     const have = c.questions.filter((q) => q.topic === tp.id).slice(-12).map((q) => "- " + q.code.split("\n").slice(0, 3).join(" ").slice(0, 140)).join("\n");
