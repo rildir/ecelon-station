@@ -128,9 +128,15 @@ export function forget(team) { try { fs.unlinkSync(file(team)); } catch { /* the
 
 // ---------------------------------------------------------------- running a plan
 /** Whether something answers on localhost at this port (IPv4 or IPv6, as dev servers bind either). */
-export function portOpen(port, ms = 600) {
-  const one = (host) => new Promise((res) => { const s = net.connect({ host, port }); const done = (v) => { s.destroy(); res(v); }; s.setTimeout(ms, () => done(false)); s.once("connect", () => done(true)); s.once("error", () => done(false)); });
-  return Promise.all([one("127.0.0.1"), one("::1")]).then(([a, b]) => a || b);
+export function portOpen(port, ms = 800) {
+  // never throws and always settles: a hard timer, not only the socket's own timeout (which Windows may not honour while connecting)
+  const one = (host) => new Promise((res) => {
+    let s = null, over = false;
+    const done = (v) => { if (over) return; over = true; clearTimeout(timer); try { s?.destroy(); } catch { /* gone */ } res(v); };
+    const timer = setTimeout(() => done(false), ms);
+    try { s = net.connect({ host, port }); s.once("connect", () => done(true)); s.once("error", () => done(false)); } catch { done(false); }
+  });
+  return Promise.all([one("127.0.0.1"), one("::1")]).then(([a, b]) => a || b, () => false);
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const view = (team) => { const s = states.get(team); return s ? { state: s.state, error: s.error || null, at: s.at, steps: s.steps.map(({ label, project, port, state, run, note }) => ({ label, project, port, state, run, note })) } : { state: "none" }; };
@@ -147,6 +153,7 @@ export async function up(team, projects) {
   const s = { state: "starting", steps: plan.steps.map((x) => ({ ...x, state: "waiting", run: null, note: "" })), error: null, at: Date.now() };
   states.set(team, s); send(team);
   (async () => {
+   try {
     for (const st of s.steps) {
       if (states.get(team) !== s) return; // stopped meanwhile
       const p = projects.find((x) => x.team === st.team); if (!p) { st.state = "failed"; st.note = t("The project is no longer on the station"); break; }
@@ -155,7 +162,8 @@ export async function up(team, projects) {
       let r;
       try { r = runs.start({ team: st.team, cwd: p.cwd, cmd: st.cmd, dir: st.dir, label: st.label }); }
       catch (e) { const same = runs.list(st.team).find((x) => x.cmd === st.cmd && x.dir === st.dir && x.status === "running"); if (!same) { st.state = "failed"; st.note = e.message; break; } r = same; }
-      st.run = r.id;
+      const waitNote = st.port ? t("Waiting for port {port}…", { port: st.port }) : t("Waiting for it to be ready…");
+      st.run = r.id; st.note = waitNote; send(team);
       const t0 = Date.now(); let ok = false;
       while (Date.now() - t0 < READY_MS) {
         if (states.get(team) !== s) return;
@@ -164,9 +172,15 @@ export async function up(team, projects) {
         if (st.port ? await portOpen(st.port) : now.url || Date.now() - t0 > 20000) { ok = true; break; }
         await sleep(1000);
       }
-      if (!ok) { st.state = "failed"; if (!st.note) st.note = t("Not ready after {n} minutes", { n: READY_MS / 60000 }); break; }
-      st.state = "up"; send(team);
+      if (!ok) { st.state = "failed"; if (st.note === waitNote) st.note = t("Not ready after {n} minutes", { n: READY_MS / 60000 }); break; }
+      st.state = "up"; st.note = ""; send(team);
     }
+   } catch (e) {
+    // anything unexpected ends the launch visibly instead of leaving the button on "starting" for ever
+    console.error("[launch]", e?.stack || e);
+    const cur = s.steps.find((x) => x.state === "starting" || x.state === "waiting") || s.steps[0];
+    if (cur) { cur.state = "failed"; cur.note = e?.message || String(e); }
+   }
     if (states.get(team) !== s) return;
     const bad = s.steps.find((x) => x.state === "failed");
     s.state = bad ? "failed" : "up"; s.error = bad ? `${bad.label}: ${bad.note}` : null; s.at = Date.now(); send(team);
