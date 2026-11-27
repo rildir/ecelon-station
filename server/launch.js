@@ -17,6 +17,7 @@ import * as runs from "./runs.js";
 import { oneShot } from "./runner.js";
 
 export const LAUNCH_MODEL = "claude-haiku-5-5";
+const MOCK = process.env.MOCK === "1"; // demo mode: nothing is asked of a model and nothing is really started
 const DIR = dataPath("launch");
 const READY_MS = 300000; // a cold Angular or .NET build can take minutes
 const states = new Map(); // team → { state, steps: [{ label, project, port, state, run, note }], error, at }
@@ -44,51 +45,86 @@ function find(root, re, depth = 3, out = [], rel = "") {
   return out;
 }
 const LOCAL = /\b(?:https?|wss?):\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|\*|\+)(?::\d{2,5})?[^\s"'`,;)]*/gi;
-const locals = (s) => [...new Set((s || "").match(LOCAL) || [])].slice(0, 12);
+const locals = (s) => [...new Set(((s || "").match(LOCAL) || []).map((u) => u.split(/[?#]/)[0]))].slice(0, 12); // no query string: it could carry a token
+const portsOf = (urls) => urls.map((u) => Number(/:(\d{2,5})(?:\/|$)/.exec(u)?.[1])).filter(Boolean);
+/** The port a well-known dev server listens on when nothing configures another one. */
+export function defaultPort(script) {
+  const c = String(script || "");
+  return /\bvite\b/.test(c) ? 5173 : /\bng serve\b|\bnx (serve|run)\b/.test(c) ? 4200 : /\bnext (dev|start)\b|react-scripts start|\bnest start\b|\bnuxt\b/.test(c) ? 3000 : /\bexpo start\b/.test(c) ? 8081 : /\bastro dev\b/.test(c) ? 4321 : null;
+}
 
-/** A short, secret-free description of one project folder: how it is started and which local addresses it names. */
-export function digest(cwd) {
-  const lines = [];
+/** What is known about one project folder without running anything and without reading a secret: the text lines shown to
+ *  the model, the ports it serves, the local ports it calls, and its most likely start command. */
+export function facts(cwd) {
+  const lines = [], serves = new Set(), calls = new Set(); let start = null;
+  const serve = (...ps) => ps.forEach((x) => Number(x) && serves.add(Number(x)));
   for (const rel of find(cwd, /^package\.json$/, 2).slice(0, 8)) {
     const p = json(path.join(cwd, rel)); if (!p) continue;
     const dir = path.dirname(rel) === "." ? "" : path.dirname(rel);
     const pm = fs.existsSync(path.join(cwd, dir, "pnpm-lock.yaml")) ? "pnpm" : fs.existsSync(path.join(cwd, dir, "yarn.lock")) ? "yarn" : "npm";
     const scripts = Object.entries(p.scripts || {}).filter(([k]) => /^(start|dev|serve|watch)|:(start|dev|serve)|^(start|serve|dev):/i.test(k)).slice(0, 10);
     const deps = Object.keys({ ...p.dependencies, ...p.devDependencies }).filter((d) => /^(@angular\/core|react|next|vue|@nestjs\/core|express|vite|nx|@nx\/|electron|fastify|nodemon)/.test(d)).slice(0, 8);
-    lines.push(`package.json${dir ? " in " + dir : ""} (${pm}): ${scripts.map(([k, v]) => `${k} = ${v}`).join("; ") || "no start script"}${deps.length ? " | uses " + deps.join(", ") : ""}`);
+    const key = ["start:dev", "dev", "start", "serve"].find((k) => typeof p.scripts?.[k] === "string");
+    const dflt = key ? defaultPort(p.scripts[key]) : null;
+    lines.push(`package.json${dir ? " in " + dir : ""} (${pm}): ${scripts.map(([k, v]) => `${k} = ${v}`).join("; ") || "no start script"}${deps.length ? " | uses " + deps.join(", ") : ""}${dflt ? ` | default port of "${key}" is ${dflt} unless configured otherwise` : ""}`);
+    const flag = key ? Number(/--port[= ](\d{2,5})/.exec(p.scripts[key])?.[1]) || null : null; // the script names its port itself
+    if (key && !start) start = { cmd: key === "start" ? `${pm} start` : `${pm} run ${key}`, dir, port: flag || dflt, fixed: !!flag, script: p.scripts[key] };
   }
   for (const rel of find(cwd, /^(angular\.json|project\.json)$/, 3).slice(0, 8)) {
     const s = read(path.join(cwd, rel)); if (!s) continue;
     const ports = [...new Set([...s.matchAll(/"port"\s*:\s*(\d{2,5})/g)].map((m) => m[1]))], proxy = [...new Set([...s.matchAll(/"proxyConfig"\s*:\s*"([^"]+)"/g)].map((m) => m[1]))];
-    const serve = /"serve"\s*:/.test(s);
-    if (ports.length || proxy.length || serve) lines.push(`${rel}: ${serve ? "has a serve target" : ""}${ports.length ? "; port " + ports.join(", ") : ""}${proxy.length ? "; proxy " + proxy.join(", ") : ""}`);
+    const hasServe = /"serve"\s*:/.test(s);
+    if (ports.length || proxy.length || hasServe) lines.push(`${rel}: ${hasServe ? "has a serve target" : ""}${ports.length ? "; port " + ports.join(", ") : ""}${proxy.length ? "; proxy " + proxy.join(", ") : ""}`);
+    if (hasServe) serve(...ports);
   }
-  for (const rel of find(cwd, /^proxy\.conf.*\.(json|js|mjs|cjs)$/i, 4).slice(0, 4)) { const u = locals(read(path.join(cwd, rel))); if (u.length) lines.push(`${rel}: forwards to ${u.join(", ")}`); }
-  for (const rel of find(cwd, /^environment[\w.-]*\.ts$/i, 6).slice(0, 6)) { const u = locals(read(path.join(cwd, rel))); if (u.length) lines.push(`${rel}: calls ${u.join(", ")}`); }
+  for (const rel of find(cwd, /^proxy\.conf.*\.(json|js|mjs|cjs)$/i, 4).slice(0, 4)) { const u = locals(read(path.join(cwd, rel))); if (u.length) { lines.push(`${rel}: forwards to ${u.join(", ")}`); portsOf(u).forEach((x) => calls.add(x)); } }
+  // where a front end keeps the address of its API: environment files and the usual config or client modules (only
+  // localhost addresses are taken from them, nothing else of their content)
+  for (const rel of find(cwd, /^environment[\w.-]*\.ts$|^(vite|next|nuxt|webpack)\.config\.(c?js|mjs|ts)$|^(api|config|constants|settings|http|client)\.(c?js|mjs|ts|jsx|tsx)$/i, 6).slice(0, 10)) {
+    const u = locals(read(path.join(cwd, rel))); if (u.length) { lines.push(`${rel}: calls ${u.join(", ")}`); portsOf(u).forEach((x) => calls.add(x)); }
+  }
+  let net = null; // { dir, profile, port } of the .NET project that has launch settings
   for (const rel of find(cwd, /^launchSettings\.json$/i, 4).slice(0, 4)) {
     const j = json(path.join(cwd, rel)); const profiles = Object.entries(j?.profiles || {}).filter(([, v]) => v?.commandName === "Project" || v?.applicationUrl).slice(0, 4);
-    if (profiles.length) lines.push(`${rel}: ${profiles.map(([k, v]) => `profile ${k} → ${locals(v.applicationUrl || "").join(" ") || v.applicationUrl || "?"}`).join("; ")}`);
+    if (!profiles.length) continue;
+    lines.push(`${rel}: ${profiles.map(([k, v]) => `profile ${k} → ${locals(v.applicationUrl || "").join(" ") || v.applicationUrl || "?"}`).join("; ")}`);
+    const [name, prof] = profiles.find(([, v]) => v?.commandName === "Project") || profiles[0], ps = portsOf(locals(prof.applicationUrl || ""));
+    serve(...ps);
+    if (!net) net = { dir: path.dirname(path.dirname(rel)) === "." ? "" : path.dirname(path.dirname(rel)), profile: name, port: ps[0] || null };
   }
   for (const rel of find(cwd, /^(server|index|app|main)\.(c?js|mjs|ts)$/i, 2).slice(0, 6)) {
     const src = read(path.join(cwd, rel), 120000) || "";
     const ports = [...new Set([...src.matchAll(/\.listen\(\s*(\d{2,5})|\bPORT\b[^\n]{0,30}?\|\|\s*(\d{2,5})|\bport\s*[:=]\s*(\d{2,5})/g)].map((m) => m[1] || m[2] || m[3]))].slice(0, 4);
-    if (ports.length) lines.push(`${rel}: listens on port ${ports.join(", ")}`);
+    if (ports.length) { lines.push(`${rel}: listens on port ${ports.join(", ")}`); serve(...ports); }
   }
   for (const rel of find(cwd, /^application(-[\w]+)?\.(properties|ya?ml)$/i, 5).slice(0, 4)) {
-    const m = /server\.port\s*[=:]\s*(\d{2,5})|^\s*port:\s*(\d{2,5})/m.exec(read(path.join(cwd, rel)) || ""); if (m) lines.push(`${rel}: server port ${m[1] || m[2]}`);
+    const m = /server\.port\s*[=:]\s*(\d{2,5})|^\s*port:\s*(\d{2,5})/m.exec(read(path.join(cwd, rel)) || ""); if (m) { lines.push(`${rel}: server port ${m[1] || m[2]}`); serve(m[1] || m[2]); }
   }
   const sln = find(cwd, /\.sln$/i, 1), csproj = find(cwd, /\.csproj$/i, 3);
   if (sln.length || csproj.length) lines.push(`.NET: ${[...sln, ...csproj].slice(0, 8).join(", ")}`);
+  let compose = null;
   for (const rel of find(cwd, /^(docker-)?compose(\.[\w-]+)?\.ya?ml$/i, 1).slice(0, 2)) {
     const s = read(path.join(cwd, rel)) || ""; const svc = [...s.matchAll(/^ {2}([\w.-]+):\s*$/gm)].map((m) => m[1]).slice(0, 10), ports = [...new Set([...s.matchAll(/["']?(\d{2,5}):\d{2,5}["']?/g)].map((m) => m[1]))].slice(0, 10);
     lines.push(`${rel}: services ${svc.join(", ") || "?"}${ports.length ? "; host ports " + ports.join(", ") : ""}`);
+    if (!compose) compose = { port: Number(ports[0]) || null };
   }
-  if (fs.existsSync(path.join(cwd, "artisan"))) lines.push("Laravel (artisan): php artisan serve");
-  if (fs.existsSync(path.join(cwd, "manage.py"))) lines.push("Django (manage.py): python manage.py runserver");
+  const laravel = fs.existsSync(path.join(cwd, "artisan")), django = fs.existsSync(path.join(cwd, "manage.py"));
+  if (laravel) lines.push("Laravel (artisan): php artisan serve");
+  if (django) lines.push("Django (manage.py): python manage.py runserver");
   const readme = find(cwd, /^readme(\.md)?$/i, 0)[0];
   if (readme) { const s = read(path.join(cwd, readme), 200000) || ""; const run = s.split(/\r?\n/).filter((l) => /\b(npm (run |start)|pnpm |yarn |nx (serve|run)|ng serve|dotnet (run|watch)|docker[- ]compose|php artisan serve|go run|python .*run)/i.test(l)).slice(0, 8); if (run.length) lines.push(`README run lines: ${run.map((l) => l.trim().slice(0, 140)).join(" | ")}`); }
-  return lines.join("\n").slice(0, 3500);
+  // the most likely start command, for a plan made without the model
+  if (start) { if (!start.fixed && [...serves].length && (/\bnode\b|nodemon|\bng\b|\bnx\b/.test(start.script) || !start.port)) start.port = [...serves][0]; }
+  else if (net) start = { cmd: `dotnet run --project ${net.dir || "."} --launch-profile ${net.profile}`, dir: "", port: net.port };
+  else if (laravel) start = { cmd: "php artisan serve", dir: "", port: 8000 };
+  else if (django) start = { cmd: "python manage.py runserver", dir: "", port: 8000 };
+  else if (compose) start = { cmd: "docker compose up", dir: "", port: compose.port };
+  if (start?.port) serves.add(start.port);
+  for (const x of serves) calls.delete(x); // its own address is not something it depends on
+  return { text: lines.join("\n").slice(0, 3500), serves: [...serves], calls: [...calls], start: start ? { cmd: start.cmd, dir: start.dir, port: start.port || null } : null };
 }
+/** A short, secret-free description of one project folder: how it is started and which local addresses it names. */
+export const digest = (cwd) => facts(cwd).text;
 
 // ---------------------------------------------------------------- asking for a plan
 /** The prompt for one target project; `projects` are { team, name, cwd } of every project on the station. */
@@ -115,12 +151,37 @@ export function cleanSteps(raw, projects) {
   }).filter(Boolean);
 }
 
+/** A plan without the model: the target's own start command, and before it every project whose port the target calls. */
+export function guessPlan(target, projects) {
+  const me = facts(target.cwd); if (!me.start) return null;
+  const steps = [];
+  for (const o of projects) {
+    if (o.team === target.team || steps.length >= 4) continue;
+    const f = facts(o.cwd), hit = f.start && me.calls.find((x) => f.serves.includes(x));
+    if (hit) steps.push({ team: o.team, project: o.name, cmd: f.start.cmd, dir: f.start.dir, port: hit });
+  }
+  steps.push({ team: target.team, project: target.name, cmd: me.start.cmd, dir: me.start.dir, port: me.start.port });
+  return cleanSteps(steps, projects);
+}
+
 export async function discover(target, projects) {
-  const out = await oneShot(planPrompt(target, projects), { cwd: target.cwd, model: LAUNCH_MODEL, timeout: 120000 });
-  const j = pickJson(out); if (!j) throw new Error(t("The plan could not be read. Try again."));
-  const steps = cleanSteps(j.steps, projects);
-  if (!steps.length) throw new Error(t("No way to start this project was found. Add the steps yourself."));
-  return { steps, note: typeof j.note === "string" ? j.note.slice(0, 300) : "", approved: false, madeAt: new Date().toISOString() };
+  const made = (steps, note) => ({ steps, note: String(note || "").slice(0, 300), approved: false, madeAt: new Date().toISOString() });
+  const guess = () => { const g = guessPlan(target, projects); return g?.length ? g : null; };
+  if (MOCK) { // the demo never calls a model: the plan comes from the sample projects' own files
+    const g = guess(); if (!g) throw new Error(t("No way to start this project was found. Add the steps yourself."));
+    return made(g, g.length > 1 ? t("Demo: {dep} is started first because {name} calls its port. In a real station a small model reads the project settings once.", { dep: g[0].project, name: target.name }) : t("Demo: found from the project's own start script. In a real station a small model reads the project settings once."));
+  }
+  try {
+    const out = await oneShot(planPrompt(target, projects), { cwd: target.cwd, model: LAUNCH_MODEL, timeout: 120000 });
+    const j = pickJson(out); if (!j) throw new Error(t("The plan could not be read. Try again."));
+    const steps = cleanSteps(j.steps, projects);
+    if (!steps.length) throw new Error(t("No way to start this project was found. Add the steps yourself."));
+    return made(steps, typeof j.note === "string" ? j.note : "");
+  } catch (e) {
+    // the model could not be asked (Claude Code missing, signed out, a bad answer): a guess from the files is better than nothing
+    const g = guess(); if (!g) throw e;
+    return made(g, t("The model could not be asked ({why}). This is a guess from the project files; check it.", { why: String(e.message || e).split("\n")[0].slice(0, 120) }));
+  }
 }
 export function approve(team, steps, projects) {
   const clean = cleanSteps(steps, projects); if (!clean.length) throw new Error(t("The plan has no valid step."));
@@ -198,6 +259,13 @@ export async function up(team, projects) {
   const cur = states.get(team); if (cur?.state === "starting") return view(team);
   const s = { state: "starting", steps: plan.steps.map((x) => ({ ...x, state: "waiting", run: null, note: "" })), error: null, at: Date.now() };
   states.set(team, s); send(team);
+  if (MOCK) { // demo: show the order and the waiting, start nothing (the sample projects have no dependencies installed)
+    (async () => {
+      for (const st of s.steps) { if (states.get(team) !== s) return; st.state = "starting"; st.note = st.port ? t("Waiting for port {port}…", { port: st.port }) : t("Waiting for it to be ready…"); send(team); await sleep(1800); if (states.get(team) !== s) return; st.state = "up"; st.note = t("Demo: not really started"); send(team); }
+      s.state = "up"; s.at = Date.now(); send(team);
+    })();
+    return view(team);
+  }
   (async () => {
    try {
     for (const st of s.steps) {

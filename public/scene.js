@@ -168,20 +168,21 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
   // (keys are the kit's linear colours; materials are created once per theme and shared)
   const SRC = { // the kit's linear colours
     wood: [0.896, 0.602, 0.393], woodDark: [0.679, 0.463, 0.3], red: [0.943, 0.371, 0.343], redDark: [0.611, 0.302, 0.294],
-    blue: [0.36, 0.521, 0.868], green: [0.184, 0.822, 0.584], grey: [0.741, 0.823, 0.84], dark: [0.31, 0.39, 0.39],
+    blue: [0.36, 0.521, 0.868], green: [0.184, 0.822, 0.584], grey: [0.741, 0.823, 0.84], dark: [0.31, 0.39, 0.39], dark2: [0.369, 0.467, 0.467],
   };
   // One calm base for every room (bone desks, graphite frames) and one muted accent per project for its rug and sofa:
   // the rooms differ, but none of them shouts. Status colours stay the only saturated thing on the stage.
-  const BASE = { wood: 0xd9d6d0, woodDark: 0x8d8a85, blue: 0x3a3a3e, green: 0x6fa583 };
+  // (the kit's own greys carry a cyan cast and its darks a teal one; both become neutral here)
+  const BASE = { wood: 0xd9d6d0, woodDark: 0x8d8a85, blue: 0x3a3a3e, green: 0x6fa583, grey: 0xcfcdc8, dark: 0x3c3c3f, dark2: 0x4e4e52 };
   const THEMES = [
     { ...BASE, red: 0xe09a3e, redDark: 0xa86f24 },  // amber
-    { ...BASE, red: 0x5b84b1, redDark: 0x3c5c80 },  // steel
+    { ...BASE, red: 0x6f8aa6, redDark: 0x4a6078 },  // steel
     { ...BASE, red: 0x7fa88a, redDark: 0x56795f },  // sage
     { ...BASE, red: 0xc46a4f, redDark: 0x8c4733 },  // clay
-    { ...BASE, red: 0x7d78a8, redDark: 0x55517a },  // slate violet
+    { ...BASE, red: 0x98a05c, redDark: 0x6a7140 },  // olive
     { ...BASE, red: 0xc9ab7a, redDark: 0x94794f },  // sand
     { ...BASE, red: 0x4f9a9a, redDark: 0x336b6b },  // teal
-    { ...BASE, red: 0xb8687e, redDark: 0x834557 },  // rose
+    { ...BASE, red: 0x944e56, redDark: 0x69353c },  // wine
   ];
 
   const themeMats = new Map(); // `${theme}|${uuid}` -> material
@@ -651,14 +652,16 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
   }
   // the light of the hour: 1 = day, 0 = night (dusk and dawn in between, with a warm sunset tint)
   let night = 0; // 0 day … 1 night
-  const DAY_HEMI = new THREE.Color(0xdfe6ff), NIGHT_HEMI = new THREE.Color(0x5966b8), DAY_SUN = new THREE.Color(0xfff4e0), NIGHT_SUN = new THREE.Color(0x8fa2ff), DUSK_SUN = new THREE.Color(0xff9d5c);
+  // neutral at every hour: the night is dimmer and a touch cooler, never blue or purple (a strong blue night light turned
+  // the graphite rooms lavender again every evening); the warmth of the night comes from the lamp halos
+  const DAY_HEMI = new THREE.Color(0xf3f0ea), NIGHT_HEMI = new THREE.Color(0x9a9eab), DAY_SUN = new THREE.Color(0xfff4e0), NIGHT_SUN = new THREE.Color(0xc4cadb), DUSK_SUN = new THREE.Color(0xffa866);
   function daylight(hour) {
     const h = ((hour % 24) + 24) % 24;
     const k = h >= 7.5 && h < 17 ? 1 : h >= 17 && h < 20 ? 1 - (h - 17) / 3 : h >= 5.5 && h < 7.5 ? (h - 5.5) / 2 : 0;
     const dusk = Math.max(0, 1 - Math.abs(k - 0.5) * 2) * (h > 12 ? 1 : 0.6); // strongest half way through the change
     night = 1 - k;
-    hemi.intensity = 0.85 + 0.75 * k; hemi.color.copy(NIGHT_HEMI).lerp(DAY_HEMI, k);
-    sun.intensity = 0.6 + 1.8 * k; sun.color.copy(NIGHT_SUN).lerp(DAY_SUN, k).lerp(DUSK_SUN, dusk * 0.8);
+    hemi.intensity = 1.2 + 0.4 * k; hemi.color.copy(NIGHT_HEMI).lerp(DAY_HEMI, k); // the night stays readable on a black page
+    sun.intensity = 1.0 + 1.4 * k; sun.color.copy(NIGHT_SUN).lerp(DAY_SUN, k).lerp(DUSK_SUN, dusk * 0.8);
     lampHaloMat.opacity = Math.max(0, night - 0.25) * 0.75;
     for (const g of modules.values()) if (g.userData.night) g.userData.night.grp.visible = night > 0.3;
     renderer.shadowMap.needsUpdate = true;

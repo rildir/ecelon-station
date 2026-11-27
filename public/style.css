@@ -1,6 +1,6 @@
-/* Ecelon Station — istasyon konsolu
-   Kapkara bir gövde, gri yazı. Ofis görünümünde vurgu kehribar, kurumsal görünümde beyaz.
-   Düğmeler oyun arayüzü gibi kalın ve basılabilir; sohbet konuşma balonlarıyla akar. */
+/* Ecelon Station: the station console
+   A pitch-black body with grey text. The accent is amber in the office view and white in the professional view.
+   Buttons are thick and pressable like a game interface; the conversation flows in speech bubbles. */
 :root {
   --void: #000000;
   --hull: #0b0b0b;
@@ -71,7 +71,7 @@ circle { fill: currentColor; stroke: none; }
 #empty-hint .btn { margin-top: 16px; }
 #tooltip { position: absolute; padding: 6px 10px; background: var(--lav); color: var(--ink); border-radius: 10px; font-size: 12.5px; font-weight: 600; pointer-events: none; transform: translate(14px, 14px); white-space: nowrap; }
 
-/* ---------- düğmeler: kalın, basılabilir ---------- */
+/* ---------- buttons: thick, pressable ---------- */
 .btn { --b: var(--hull-3); --s: #252423; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 40px; padding: 0 16px; border-radius: 12px; border: none; font: 700 14px/1 var(--f-display); letter-spacing: .005em; cursor: pointer; background: var(--b); color: var(--lav); box-shadow: 0 4px 0 var(--s); transform: translateY(0); transition: transform .08s, box-shadow .08s, filter .12s; }
 .btn:hover { filter: brightness(1.08); }
 .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--s); }
@@ -134,7 +134,7 @@ circle { fill: currentColor; stroke: none; }
 .seg button[aria-checked="true"] { background: var(--lav); color: var(--ink); box-shadow: 0 2px 0 var(--lav-3); }
 .seg button.risky[aria-checked="true"] { background: var(--st-error); color: #fff; box-shadow: 0 2px 0 #a8283b; }
 
-/* model seçici */
+/* model picker */
 .model-pop { width: 320px; max-height: min(70vh, 520px); overflow-y: auto; }
 .model-pop .mp-item { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 10px 12px; }
 .mp-desc { grid-column: 1; font-size: 12.5px; color: var(--lav-3); }
@@ -144,7 +144,7 @@ circle { fill: currentColor; stroke: none; }
 .mp-more svg { transition: transform .15s; }
 .mp-more[aria-expanded="true"] svg { transform: rotate(180deg); }
 
-/* ---------- sohbet ---------- */
+/* ---------- conversation ---------- */
 #chat { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 18px 12px; display: flex; flex-direction: column; gap: 12px; }
 .msg { font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 92%; }
 .msg.user { align-self: flex-end; background: var(--orange); color: var(--orange-ink); font-weight: 500; padding: 10px 14px; border-radius: 18px 18px 6px 18px; box-shadow: 0 3px 0 var(--orange-deep); }
@@ -171,7 +171,7 @@ details.think summary { cursor: pointer; user-select: none; width: max-content; 
 details.think summary:hover { color: #fff; }
 details.think .tbody { white-space: pre-wrap; margin-top: 8px; padding: 2px 0 2px 12px; border-left: 3px solid var(--hull-3); font-style: italic; max-height: 260px; overflow-y: auto; }
 
-/* ---------- canlı şerit ---------- */
+/* ---------- live strip ---------- */
 #activity { display: flex; align-items: center; gap: 10px; margin: 0 16px 4px; padding: 9px 14px; background: var(--hull-2); color: var(--orange); border-radius: 12px; font-size: 13px; font-weight: 600; }
 #act-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #act-time { font-variant-numeric: tabular-nums; color: var(--lav-3); font-weight: 500; }
@@ -228,15 +228,20 @@ input::placeholder, textarea::placeholder { color: #7c7973; }
 .err { color: #ff8095; font-size: 13px; font-weight: 600; }
 .err:empty { display: none; }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
-/* birincil düğme DOM'da önce (Enter onu seçer), ekranda sağda */
+/* the primary button comes first in the DOM (Enter picks it); on screen it is on the right */
 .dlg-actions.rev { flex-direction: row-reverse; justify-content: flex-start; }
+/* a dialog taller than the window scrolls, but its buttons stay in view: the row sticks to the bottom edge and the
+   content fades out under it (the paddings mirror `dialog form`, so nothing moves while the dialog fits) */
+dialog:not(.lightbox) > form > .dlg-actions:last-child { position: sticky; bottom: 0; z-index: 2; margin: -8px -24px -22px; padding: 14px 24px 22px; background: linear-gradient(to bottom, transparent, var(--hull) 14px); }
+/* "Send to all" is the tallest dialog: on a short window (a 768 px laptop) it tightens so that it fits without scrolling */
+@media (max-height: 820px) { #dlg-bc form { gap: 10px; padding-top: 22px; } #dlg-bc #bc-text { height: 62px; min-height: 0; } #dlg-bc #bc-agents { max-height: 150px; } }
 #bc-agents, #lk-list { display: grid; gap: 4px; max-height: 220px; overflow-y: auto; padding: 6px; background: var(--void); border-radius: 14px; }
 #bc-agents label, #lk-list label { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 10px; cursor: pointer; font-size: 14px; }
 #bc-agents label:hover, #lk-list label:hover { background: var(--hull-2); }
 #bc-agents input, #lk-list input { width: 18px; height: 18px; accent-color: var(--orange); }
 #bc-agents .portrait, #lk-list .portrait { width: 28px; height: 28px; border-radius: 8px; }
 
-/* ---------- küçük ekran / hareket ---------- */
+/* ---------- small screens / motion ---------- */
 @media (max-width: 900px) {
   #app { grid-template-columns: 1fr; grid-template-rows: 46vh 1fr; }
   #panel { border-left: none; border-top: 4px solid var(--hull-3); }
@@ -246,7 +251,7 @@ input::placeholder, textarea::placeholder { color: #7c7973; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
-/* ---------- panel genişliği tutamağı ---------- */
+/* ---------- panel width handle ---------- */
 #resizer { position: absolute; left: -10px; top: 0; bottom: 0; width: 16px; cursor: col-resize; z-index: 15; touch-action: none; }
 #resizer::after { content: ""; position: absolute; left: 6px; top: 50%; width: 4px; height: 56px; margin-top: -28px; border-radius: 4px; background: var(--rim); opacity: 0; transition: opacity .15s, background-color .15s; }
 #resizer:hover::after, #resizer:focus-visible::after, body.resizing #resizer::after { opacity: 1; background: var(--orange); }
@@ -254,7 +259,7 @@ input::placeholder, textarea::placeholder { color: #7c7973; }
 body.resizing { cursor: col-resize; user-select: none; }
 body.resizing #scene { pointer-events: none; }
 
-/* ---------- klasör seçme ---------- */
+/* ---------- folder picking ---------- */
 .pick-big { display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px 18px; border: 2px dashed var(--rim); border-radius: 16px; background: var(--void); color: var(--lav); text-align: left; cursor: pointer; transition: border-color .15s, background-color .15s; }
 .pick-big:hover { border-color: var(--orange); background: #131211; }
 .pick-big svg { width: 30px; height: 30px; color: var(--orange); stroke-width: 1.6; }
@@ -267,7 +272,7 @@ details.manual summary { cursor: pointer; font-size: 12.5px; font-weight: 600; c
 details.manual summary:hover { color: #fff; }
 details.manual input { margin-top: 8px; }
 
-/* ---------- görseller ---------- */
+/* ---------- images ---------- */
 .composer textarea { padding-left: 50px; }
 .attach { position: absolute; left: 9px; bottom: 9px; width: 34px; height: 38px; border: none; border-radius: 10px; background: transparent; color: #807d78; cursor: pointer; display: grid; place-items: center; }
 .attach:hover { background: rgba(34, 33, 32, .08); color: var(--ink); }
@@ -293,7 +298,7 @@ dialog.lightbox p { margin: 10px 4px 0; font: 400 12px/1.4 var(--f-mono); color:
 dialog.lightbox form { padding: 0; display: block; position: absolute; top: 18px; right: 18px; }
 .lb-close { background: rgba(24, 24, 23, .75); color: #fff; }
 
-/* ---------- VS Code tarzı mesaj kutusu araç çubuğu ---------- */
+/* ---------- message box toolbar, VS Code style ---------- */
 .composer textarea { padding: 14px 16px 6px; min-height: 48px; }
 .cbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px 8px; }
 .cb-spacer { flex: 1; }
@@ -316,12 +321,12 @@ dialog.lightbox form { padding: 0; display: block; position: absolute; top: 18px
 .ctx-fg { stroke: var(--st-done); stroke-linecap: round; transition: stroke-dashoffset .4s; }
 .ctx.warn .ctx-fg { stroke: var(--st-thinking); } .ctx.full .ctx-fg { stroke: var(--st-error); }
 
-/* açılır listeler (model / efor / izin) kutunun üstünde açılır */
+/* the pickers (model / effort / permission) open above the box */
 .pick-pop { width: 300px; max-height: min(70vh, 520px); overflow-y: auto; }
 .pick-pop .mp-item { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 9px 12px; }
 .pick-pop .mp-item.risky .mp-name { color: #ff8095; }
 
-/* ---------- üst çubuk kullanım göstergesi ---------- */
+/* ---------- usage meter in the top bar ---------- */
 .usage { display: inline-flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px; border: none; border-radius: 12px; background: rgba(24, 24, 23, .7); color: var(--lav-2); font: 600 12.5px/1 var(--f-ui); cursor: pointer; }
 .usage:hover { background: rgba(24, 24, 23, .9); color: #fff; }
 .u-mini { display: inline-flex; align-items: center; gap: 6px; }
@@ -341,12 +346,12 @@ dialog.lightbox form { padding: 0; display: block; position: absolute; top: 18px
 .cb-pill span { overflow: hidden; text-overflow: ellipsis; }
 .cbar .send, .cbar .cb-icon, .cbar .ctx { flex: none; }
 
-/* ---------- düzeltmeler ---------- */
-/* mesaj kutusundaki yazı alanı: genel giriş çerçevesi uygulanmasın (sarı çizgi) */
+/* ---------- fixes ---------- */
+/* the text area inside the message box: the general input frame does not apply (the yellow line) */
 .composer textarea, .composer textarea:hover, .composer textarea:focus { border: none; border-radius: 0; background: transparent; box-shadow: none; outline: none; }
-/* pencere kaydırması yok; yalnızca içerik alanları kayar */
+/* the window does not scroll; only the content areas do */
 html, body { overflow: hidden; }
-/* temaya uyan ince kaydırma çubukları */
+/* thin scrollbars that fit the theme */
 * { scrollbar-width: thin; scrollbar-color: var(--rim) transparent; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
@@ -364,7 +369,7 @@ html, body { overflow: hidden; }
 #scene { cursor: grab; }
 @media (max-width: 1200px) { #map-hint { display: none; } }
 
-/* ================= VS Code tarzı sohbet ================= */
+/* ================= conversation, VS Code style ================= */
 .chat-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .chat-wrap #chat { flex: 1; }
 #jump { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); width: 36px; height: 36px; border: none; border-radius: 50%; background: var(--lav); color: var(--ink); display: grid; place-items: center; cursor: pointer; box-shadow: 0 3px 0 var(--lav-3), 0 8px 20px rgba(0, 0, 0, .35); }
@@ -407,7 +412,7 @@ html[data-i18n-pending] body { visibility: hidden; } /* no flash of untranslated
 .code-head .copy:hover { background: #373634; color: #fff; }
 .msg .code pre { margin: 0; border-radius: 0; }
 
-/* araç satırı + ayrıntı */
+/* tool row + detail */
 .msg.tool { display: block; padding: 0; }
 .trow { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; padding: 7px 12px; cursor: default; }
 .msg.tool.expandable .trow { cursor: pointer; }
@@ -426,7 +431,7 @@ pre.diff span { display: block; padding: 0 12px; }
 pre.diff .del { background: rgba(255, 77, 106, .14); color: #ffb3c0; }
 pre.diff .add { background: rgba(47, 210, 127, .14); color: #a9f2c9; }
 
-/* kartlar: görevler, plan, izin */
+/* cards: to-dos, plan, permission */
 .msg.todo, .msg.plan, .msg.perm { align-self: stretch; max-width: none; white-space: normal; background: var(--hull-2); border-radius: 14px; padding: 12px 14px; box-shadow: 0 3px 0 #242321; }
 .todo-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .todo-head b { font: 800 15px/1 var(--f-display); color: #fff; }
@@ -460,7 +465,7 @@ pre.diff .add { background: rgba(47, 210, 127, .14); color: #a9f2c9; }
 .q-item button:hover { background: var(--hull-3); color: #fff; }
 .q-item svg { width: 12px; height: 12px; }
 
-/* geçmiş konuşmalar */
+/* past conversations */
 .history-pop { width: 340px; max-height: min(70vh, 560px); overflow-y: auto; padding: 8px; }
 .h-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 6px 10px; }
 .h-head b { font: 800 16px/1 var(--f-display); color: #fff; }
@@ -475,19 +480,19 @@ pre.diff .add { background: rgba(47, 210, 127, .14); color: #a9f2c9; }
 .h-del svg { width: 14px; height: 14px; }
 .h-empty { margin: 4px 8px 10px; font-size: 13px; color: var(--lav-3); }
 
-/* @dosya önerileri */
+/* @file suggestions */
 .mention-pop { max-height: 260px; overflow-y: auto; }
 .mn-item { display: grid !important; gap: 1px; padding: 7px 12px !important; }
 .mn-item b { font: 600 13.5px/1.2 var(--f-ui); color: #fff; }
 .mn-item span { font: 400 11.5px/1.3 var(--f-mono); color: var(--lav-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mn-item.on { background: var(--hull-3); box-shadow: inset 3px 0 0 var(--orange); }
 
-/* ad değiştirme */
+/* renaming */
 #a-name { cursor: text; border-radius: 6px; outline: none; }
 #a-name:hover { box-shadow: 0 0 0 2px var(--hull-3); }
 #a-name[contenteditable="true"] { box-shadow: 0 0 0 2px var(--orange); background: var(--void); padding: 0 4px; }
 
-/* ---------- ajan araç çubuğu (yazılı düğmeler) ---------- */
+/* ---------- agent toolbar (buttons with labels) ---------- */
 .agent-head { grid-template-columns: auto auto 1fr; }
 .agent-tools { display: flex; align-items: center; gap: 6px; margin: 0 16px 12px; padding: 6px; background: var(--hull-2); border-radius: 14px; position: relative; }
 .hbtn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border: none; border-radius: 10px; background: transparent; color: var(--lav); font: 600 13px/1 var(--f-ui); cursor: pointer; white-space: nowrap; }
@@ -496,7 +501,7 @@ pre.diff .add { background: rgba(47, 210, 127, .14); color: #a9f2c9; }
 .hbtn.icon-only { margin-left: auto; padding: 0 10px; }
 .hbtn.icon-only svg { color: var(--lav-2); }
 #menu-pop { top: 46px; right: 6px; }
-/* açılır menülerdeki gerçek düğmeler kendi stilini korusun */
+/* real buttons inside pop-up menus keep their own style */
 .pop .btn { text-align: center; padding: 0 12px; background: var(--b); color: var(--lav); }
 .pop .btn.primary { color: var(--orange-ink); }
 .pop .btn:hover { background: var(--b); filter: brightness(1.08); }
@@ -507,7 +512,7 @@ pre.diff .add { background: rgba(47, 210, 127, .14); color: #a9f2c9; }
 .wordmark .logo { width: 26px; height: 26px; stroke: none; fill: initial; border-radius: 4px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .14); }
 .wordmark .logo rect { stroke: none; }
 
-/* başlık eylemleri: sağ üstte, sohbet alanını yemesin */
+/* header actions: top right, so they do not eat into the conversation */
 .agent-head { grid-template-columns: auto auto 1fr auto; align-items: start; }
 .head-actions { display: flex; align-items: center; gap: 2px; position: relative; padding-top: 2px; }
 .head-actions .hbtn { height: 32px; padding: 0 10px; gap: 6px; font-size: 12.5px; }
@@ -516,7 +521,7 @@ pre.diff .add { background: rgba(47, 210, 127, .14); color: #a9f2c9; }
 .agent-id h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-size: 22px; }
 .agent-id h2[contenteditable="true"] { text-overflow: clip; }
 
-/* ---------- herkese gönder seçenekleri ---------- */
+/* ---------- send-to-all options ---------- */
 .bc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: -6px; font-size: 12.5px; color: var(--lav-3); }
 .linkish { border: none; background: none; color: var(--orange); font: 600 12.5px/1 var(--f-ui); cursor: pointer; padding: 4px; }
 .linkish:hover { text-decoration: underline; }
@@ -534,7 +539,7 @@ dialog select.risky { border-color: var(--st-error); }
 
 
 /* =================================================================
-   Belge arşivi
+   Document library
    ================================================================= */
 #library { position: fixed; inset: 0; z-index: 40; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--void); animation: lib-in .16s ease-out; }
 @keyframes lib-in { from { opacity: 0; transform: translateY(6px); } }
@@ -551,7 +556,7 @@ kbd { font: 500 11px/1 var(--f-mono); color: var(--lav-3); padding: 4px 6px; bor
 
 .lib-body { display: grid; grid-template-columns: 236px 372px minmax(0, 1fr); min-height: 0; border-top: 1px solid rgba(255, 255, 255, .06); }
 
-/* sol: koleksiyonlar */
+/* left: collections */
 .lib-side { overflow-y: auto; padding: 14px 10px 20px; display: grid; align-content: start; gap: 2px; }
 .ls-group { display: grid; gap: 2px; }
 .ls-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 6px 6px 10px; font: 700 11px/1 var(--f-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--lav-3); }
@@ -570,7 +575,7 @@ kbd { font: 500 11px/1 var(--f-mono); color: var(--lav-3); padding: 4px 6px; bor
 .ls-empty { margin: 2px 10px 4px; font-size: 12.5px; line-height: 1.45; color: var(--lav-3); }
 .ls-empty i { font-style: normal; color: var(--lav-2); }
 
-/* orta: liste */
+/* middle: the list */
 .lib-list { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-height: 0; background: var(--hull); border-radius: 18px 18px 0 0; margin-top: 8px; }
 .ll-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 16px 6px 18px; }
 .ll-title { min-width: 0; display: grid; }
@@ -626,7 +631,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .k-pdf { --c: #e5484d; } .k-doc { --c: #f4a032; } .k-xls { --c: #1f9d5c; } .k-md { --c: #8b6be0; }
 .k-csv { --c: #0f9e93; } .k-txt { --c: #86837d; } .k-img { --c: #d6488f; } .k-oth { --c: #6b6964; }
 
-/* sağ: önizleme */
+/* right: preview */
 .lib-view { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; }
 .lv-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 18px 20px 14px 22px; }
 .lv-id { min-width: 0; }
@@ -654,7 +659,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .lv-other p { margin: 0; max-width: 380px; line-height: 1.55; }
 .lv-other div { display: flex; gap: 8px; }
 
-/* kâğıt: md/docx önizlemesi */
+/* paper: md/docx preview */
 .paper { max-width: 820px; margin: 28px auto; padding: 52px 60px; background: #f7f6fc; color: #2c2b29; border-radius: 6px; box-shadow: 0 1px 0 rgba(255, 255, 255, .5) inset, 0 24px 60px rgba(0, 0, 0, .45); font: 400 14.5px/1.65 var(--f-ui); overflow-wrap: anywhere; }
 .paper > :first-child { margin-top: 0; }
 .paper h1, .paper h2, .paper h3, .paper h4, .paper h5, .paper h6 { font-family: var(--f-display); font-weight: 800; letter-spacing: -.01em; line-height: 1.25; color: #1f1e1d; margin: 1.4em 0 .5em; }
@@ -697,12 +702,12 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .sh-tabs button[aria-pressed="true"] { background: #121211; color: #fff; box-shadow: inset 0 2px 0 #1f9d5c; }
 .pv-cut { margin: 0; padding: 10px 14px; font-size: 12px; color: var(--lav-3); }
 
-/* kod / düz metin */
+/* code / plain text */
 .pv-code pre { margin: 0; padding: 16px 0; font: 400 12.5px/1.6 var(--f-mono); color: #e3e2e0; counter-reset: ln; }
 .pv-code code > span { display: block; padding: 0 18px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pv-code code > span::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 52px; padding-right: 16px; margin-right: 4px; text-align: right; color: #64625e; user-select: none; }
 
-/* düzenleyici */
+/* editor */
 .editor { min-height: 0; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); border-radius: 16px; overflow: hidden; border: 1px solid var(--rim); background: #121211; }
 .ed-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; background: var(--hull); border-bottom: 1px solid rgba(255, 255, 255, .06); }
 .ed-state { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--lav-2); }
@@ -714,7 +719,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .ed-live { overflow: auto; border-left: 1px solid #2c2b29; background: #181817; }
 .ed-live .paper { margin: 18px; padding: 34px 38px; }
 
-/* bilgi paneli */
+/* info panel */
 .lv-info { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 4px; padding: 2px 4px 10px 0; }
 .lv-info section { padding: 12px 14px 14px; background: var(--hull); border-radius: 14px; display: grid; gap: 8px; }
 .lv-info h4 { margin: 0; display: flex; justify-content: space-between; font: 700 11px/1 var(--f-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--lav-3); }
@@ -748,14 +753,14 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .li-path { text-align: left; border: none; padding: 7px 9px; border-radius: 8px; background: var(--hull-2); color: var(--lav-3); font: 400 11px/1.45 var(--f-mono); overflow-wrap: anywhere; cursor: copy; }
 .li-path:hover { color: var(--lav); }
 
-/* sürükle-bırak */
+/* drag and drop */
 .lib-drop { display: none; position: absolute; inset: 10px; z-index: 5; border: 2px dashed var(--orange); border-radius: 22px; background: rgba(24, 24, 23, .82); place-items: center; pointer-events: none; }
 #library.dropping .lib-drop { display: grid; }
 .lib-drop div { display: grid; justify-items: center; gap: 8px; color: var(--lav-2); }
 .lib-drop svg { width: 40px; height: 40px; color: var(--orange); stroke-width: 1.8; }
 .lib-drop b { font: 800 22px/1.2 var(--f-display); color: #fff; }
 
-/* menü */
+/* menu */
 .lib-menu { position: fixed; z-index: 95; min-width: 220px; max-height: 60vh; overflow-y: auto; }
 .lib-menu button { display: flex; align-items: center; gap: 9px; }
 .lib-menu small { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--orange); }
@@ -764,7 +769,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 #dlg-prompt input { height: 42px; padding: 0 12px; border: 1px solid var(--rim); border-radius: 11px; background: var(--hull-2); color: #fff; }
 #dlg-prompt input:focus { outline: none; border-color: var(--orange); box-shadow: var(--ring); }
 
-/* sohbet tarafı: belge çipleri */
+/* conversation side: document chips */
 .doc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 #attach-list .doc-chips { width: 100%; }
 .doc-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 4px 6px 4px 4px; border: none; border-radius: 11px; background: #e5e4e3; color: var(--ink); font: 600 12.5px/1.2 var(--f-ui); box-shadow: 0 2px 0 var(--lav-3); text-align: left; }
@@ -809,7 +814,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .a-linked svg { width: 13px; height: 13px; color: var(--orange); }
 
 /* =================================================================
-   Ekip: rol sekmeleri, gruplu mürettebat listesi, devir
+   Team: role tabs, grouped crew list, handoff
    ================================================================= */
 .team-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 12px; }
 .team-tabs:empty { display: none; }
@@ -842,7 +847,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .mn-role svg { grid-row: span 2; width: 18px; height: 18px; color: var(--orange); }
 .mn-role b, .mn-role span { grid-column: 2; }
 #dlg-handoff textarea { min-height: 84px; }
-/* ekip lideri: görev ve sonuç kartları */
+/* team lead: task and result cards */
 .team-card { align-self: stretch; padding: 10px 12px; border: 1px solid var(--rim); border-left: 3px solid var(--orange); border-radius: 12px; background: var(--hull-2); display: grid; gap: 6px; }
 .team-card.tc-result { border-left-color: var(--st-done); }
 .tc-head, .team-card summary { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--lav); }
@@ -878,7 +883,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .icon-btn-top.on { --b: #4f4d4a; color: var(--orange); }
 .icon-btn-top.on svg { fill: var(--orange); }
 
-/* değişiklik kartı */
+/* change card */
 .chg-card { align-self: stretch; max-width: 100%; white-space: normal; padding: 10px 12px; border-radius: 12px; background: var(--hull-2); border: 1px solid var(--rim); display: grid; gap: 6px; }
 .chg-card.reverted { opacity: .6; }
 .chg-card.reverted .chg-files { text-decoration: line-through; }
@@ -959,12 +964,12 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 #btn-reqs em:empty { display: none; }
 @media (max-width: 1200px) { .rq-actions .btn { padding: 0 9px; font-size: 12px; } }
 .tc-sib .tc-head svg, .tc-sib summary svg { color: var(--cyan); }
-/* başlık: eylemler adın altında ayrı satırda (ad ve rozetler sıkışmasın) */
+/* header: the actions sit on their own row under the name (so the name and the badges are not squeezed) */
 .agent-head { grid-template-columns: auto auto minmax(0, 1fr); row-gap: 6px; }
 .agent-head .head-actions { grid-column: 3; justify-self: start; margin-left: -10px; padding-top: 0; }
 .a-row { flex-wrap: nowrap; } .a-linked { white-space: nowrap; }
 #reqs .lib-title h2 span { font-size: inherit; color: var(--orange); }
-/* kapsam: doküman iddiası / doğrulama / uyuşmazlık */
+/* scope: document claim / verification / mismatch */
 .rq-alert { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; background: rgba(255, 77, 106, .12); border: 1px solid rgba(255, 77, 106, .5); color: #ffd0d8; font-size: 13px; }
 .rq-alert svg { width: 20px; height: 20px; color: #ff8095; flex: none; }
 .rq-alert b { color: #fff; }
@@ -988,7 +993,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .lib-menu .lm-title { margin: 8px 12px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 
 /* =================================================================
-   Git paneli
+   Git panel
    ================================================================= */
 #git .lib-top { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 #git .lib-title h2 span { font-size: inherit; color: var(--orange); }
@@ -1041,7 +1046,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .li-git.ahead { background: rgba(246, 162, 58, .2); color: var(--orange); }
 
 /* =================================================================
-   Kapsam: doküman kapsaması, kabul kriterleri, ikinci göz
+   Scope: document coverage, acceptance criteria, second review
    ================================================================= */
 .rq-body { grid-template-rows: auto auto minmax(0, 1fr); }
 .rq-tabs { display: flex; gap: 4px; padding: 12px 22px 0; border-bottom: 1px solid rgba(255, 255, 255, .06); }
@@ -1092,7 +1097,7 @@ mark { background: rgba(246, 162, 58, .35); color: #fff; border-radius: 3px; pad
 .cv-more { display: flex; justify-content: center; padding: 8px; }
 
 /* =================================================================
-   Pratik paket: sürükle-bırak, okunmamış, sağ tık, Ctrl+K, hızlı komutlar
+   Convenience pack: drag and drop, unread, right click, Ctrl+K, quick commands
    ================================================================= */
 #agent-list li { position: relative; }
 #agent-list li.dragging { opacity: .4; }
@@ -1127,7 +1132,7 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 5
 .qk.add { width: 26px; padding: 0; font-size: 15px; line-height: 1; }
 
 /* =================================================================
-   Kod editörü
+   Code editor
    ================================================================= */
 #editor { position: fixed; inset: 0; z-index: 40; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--void); animation: lib-in .16s ease-out; }
 #editor .lib-top { grid-template-columns: auto auto minmax(0, 1fr) auto; }
@@ -1226,13 +1231,13 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 5
 #qo-q { width: 100%; height: 50px; padding: 0 18px; border: 0; border-bottom: 1px solid var(--rim); background: none; color: #fff; font: 500 15px var(--f-mono); outline: none; }
 .trow .topen + .topen { margin-left: 0; }
 
-/* akıcı panel sürükleme: sohbette ekranda olmayan mesajlar yerleşim hesabına girmez */
+/* smooth panel dragging: messages that are off screen stay out of the layout pass */
 #chat > * { contain-intrinsic-size: auto 90px; }
 body.resizing #chat > * { content-visibility: auto; }
 body.resizing #panel, body.resizing #stage { will-change: contents; }
 body.resizing * { transition: none !important; }
 
-/* proje başlığı: düğmeler panel genişliğine sığsın (Geçmiş ve ⋯ dışarı taşmasın) */
+/* project header: the buttons fit the panel width (History and ⋯ do not spill out) */
 #panel { container-type: inline-size; container-name: panel; }
 .agent-head .head-actions { grid-column: 2 / -1; margin-left: -6px; flex-wrap: wrap; max-width: 100%; min-width: 0; }
 @container panel (max-width: 680px) {
@@ -1248,8 +1253,8 @@ body.resizing * { transition: none !important; }
 .lt-r.st-tool { color: var(--st-tool); background: rgba(47, 184, 255, .15); }
 .lt-r.st-error { color: var(--st-error); background: rgba(255, 77, 106, .15); }
 .chip.warn { color: #ffc2cc; background: rgba(255, 77, 106, .14); }
-/* okunmamış: "Düşünüyor" rengiyle karışmasın diye ayrı bir "yeni" etiketi */
-#agent-list li.unread .li-name::after { content: var(--l-new, "new"); width: auto; height: auto; padding: 1px 6px; border-radius: 999px; background: var(--cyan); color: var(--ink); font: 700 10px/1.5 var(--f-ui); box-shadow: none; text-transform: uppercase; letter-spacing: .04em; }
+/* unread: a "new" label of its own, so it is not mistaken for the "Thinking" colour */
+#agent-list li.unread .li-name::after { content: var(--l-new, "new"); width: auto; height: auto; padding: 1px 6px; border-radius: 999px; background: var(--orange); color: var(--orange-ink); font: 700 10px/1.5 var(--f-ui); box-shadow: none; text-transform: uppercase; letter-spacing: .04em; }
 .cv-by { font-size: 11px; color: var(--lav-3); }
 .cv-by.agent { color: #ffcf91; font-weight: 600; }
 .tc-peek { margin: 2px 0 4px; font-size: 12.5px; line-height: 1.45; color: var(--lav-2); }
@@ -1257,7 +1262,7 @@ body.resizing * { transition: none !important; }
 #git.norepo .gt-box, #git.norepo .gt-diff-pane, #git.norepo [data-g="fetch"], #git.norepo [data-g="pull"], #git.norepo [data-g="push"] { display: none; }
 
 /* =================================================================
-   Çalıştır paneli + Sorunlar
+   Run panel + Problems
    ================================================================= */
 #runs { position: fixed; inset: 0; z-index: 40; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--void); animation: lib-in .16s ease-out; }
 #runs[hidden] { display: none; }
@@ -1313,7 +1318,7 @@ body.resizing * { transition: none !important; }
 #run-badge { font: 600 11px var(--f-mono); font-style: normal; color: var(--st-done); }
 #run-badge:empty { display: none; }
 
-/* Git: dallar ve çakışma çözümü */
+/* Git: branches and conflict resolution */
 .gt-bbtn { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; margin-left: -8px; border: 0; border-radius: 7px; background: none; color: inherit; font: inherit; cursor: pointer; }
 .gt-bbtn:hover { background: var(--hull-3); }
 .gt-caret { width: 12px !important; height: 12px !important; color: var(--lav-3) !important; fill: none; stroke: currentColor; stroke-width: 1.8; }
@@ -1427,37 +1432,40 @@ body.resizing * { transition: none !important; }
 .b2-switch input:focus-visible + i { box-shadow: var(--ring); }
 @media (prefers-reduced-motion: reduce) { .bell2, .b2-row.flash { animation: none; } }
 
-/* --- test bulguları: küçük düzeltmeler --- */
-/* görünür odak halkası (klavye kullanıcıları) */
+/* --- test findings: small fixes --- */
+/* a visible focus ring (keyboard users) */
 .btn:focus-visible, .hbtn:focus-visible, .icon-btn:focus-visible, #agent-list li button:focus-visible, .qk:focus-visible, .lib-menu button:focus-visible, .cb-pill:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
-/* sağ tık menüsü küçük ekranda kesilmesin */
+/* the right-click menu is not cut off on a small screen */
 .ctx-menu, .lib-menu { max-height: calc(100vh - 16px); overflow-y: auto; }
-/* uzun proje adları listeyi bozmasın */
+/* long project names do not break the list */
 #agent-list .li-name { display: flex; align-items: center; min-width: 0; }
 #agent-list .li-name, #agent-list .li-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-/* bildirimler: sahnenin üst ortasında (mesaj kutusuna ve panele binmez); tam ekran bir katman açıkken sağ üstte, başlığın altında */
+/* toasts: top centre of the stage (clear of the message box and the panel); with a full-screen layer open, top right under its header */
 #toasts { right: auto; left: calc((100vw - var(--panel-w, 480px)) / 2); transform: translateX(-50%); top: 76px; bottom: auto; width: min(440px, calc(100vw - var(--panel-w, 480px) - 32px)); }
 @media (max-width: 900px) { #toasts { left: 50%; width: calc(100vw - 32px); } }
 body:has(.overlay:not([hidden])) #toasts { left: auto; right: 24px; transform: none; top: 104px; width: min(440px, calc(100vw - 48px)); }
 body:has(.overlay:not([hidden])) .toast { justify-self: end; }
-/* boş sohbet: ilk adım ipuçları */
+/* empty conversation: first-step tips */
 .ce-tips { margin: 10px auto 0; padding: 0; max-width: 420px; list-style: none; display: grid; gap: 8px; text-align: left; font-size: 12.5px; color: var(--lav-2); line-height: 1.5; }
 .ce-tips li { padding: 8px 10px; border-radius: 10px; background: var(--hull-2); }
 .ce-tips b { color: #fff; }
-/* üst çubuk: dar sahnede yalnızca simgeler */
+/* top bar: icons only on a narrow stage */
 #stage { container-type: inline-size; container-name: stage; }
 .top-actions .btn svg { width: 16px; height: 16px; }
 .top-actions .btn { display: inline-flex; align-items: center; gap: 7px; }
-@container stage (max-width: 860px) { .top-actions .tb-l { display: none; } .top-actions .btn { padding: 0 10px; } .usage { display: none !important; } }
+/* 990: a 1366 px laptop with the panel open leaves the stage about 886 px, where the labelled buttons no longer fit on
+   one line (they wrapped to a second row and pushed the name down); the labels go first, the usage meter later */
+@container stage (max-width: 990px) { .top-actions .tb-l { display: none; } .top-actions .btn { padding: 0 10px; } }
+@container stage (max-width: 860px) { .usage { display: none !important; } }
 @container stage (max-width: 560px) { .wordmark .wm-name { display: none; } }
-/* uzun kullanıcı mesajları katlanır */
+/* long user messages fold */
 .msg.user.long { max-height: 220px; overflow: hidden; position: relative; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
 #chat > .more { align-self: flex-end; margin: -4px 4px 4px 0; border: 0; background: none; color: var(--orange); font: 600 12px var(--f-ui); cursor: pointer; }
 .lib-empty p b, .lib-empty p strong { display: inline; font: inherit; font-weight: 700; color: #fff; margin: 0; }
 .lv-none p b { display: inline; font: inherit; font-weight: 700; color: #fff; }
 .cv-help { flex-basis: 100%; font-size: 12px; color: var(--lav-3); } .cv-help summary { cursor: pointer; width: max-content; } .cv-help p { margin: 6px 0 0; max-width: 760px; line-height: 1.55; } .cv-help b { color: var(--lav); }
 
-/* Kapsam ve diğer tam ekran başlıkları: düğme metni kırılmasın, gerekirse düğmeler alt satıra geçsin */
+/* Scope and the other full-screen headers: button text never wraps; the buttons move to a second row when they must */
 .rq-actions { flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; }
 .rq-actions .btn { white-space: nowrap; }
 @media (max-width: 1400px) { #reqs .lib-top { grid-template-columns: auto auto minmax(140px, 1fr) auto; } #reqs .lib-search { min-width: 0; } }
@@ -1481,7 +1489,7 @@ body:has(.overlay:not([hidden])) .toast { justify-self: end; }
 .vd-del { background: rgba(255, 77, 106, .12); } .vd-del i, .vd-del span { color: #ffc2cc; }
 .vd-skip { padding: 4px 26px; color: var(--lav-3); font-size: 11.5px; background: rgba(255, 255, 255, .03); }
 #runs .lib-top { grid-template-columns: auto auto minmax(0, 1fr) auto; }
-/* alt panel modu: sahnenin altında, sohbet sağda görünür kalır */
+/* bottom panel mode: under the stage, the conversation stays visible on the right */
 #runs.docked { inset: auto var(--panel-w, 480px) 0 0; height: 44vh; min-height: 260px; animation: none; border-top: 3px solid var(--orange); box-shadow: 0 -16px 40px rgba(0, 0, 0, .45); background-image: none; }
 #runs.docked .lib-top { padding-top: 6px; padding-bottom: 6px; }
 #runs.docked .lib-title h2 { font-size: 16px; }
@@ -1765,7 +1773,8 @@ body.live #panel, body.live #topbar, body.live #inbox, body.live #mapctl, body.l
 #tour .tr-dots { display: flex; gap: 5px; } #tour .tr-dots i { width: 22px; height: 4px; border-radius: 2px; background: var(--hull-3); transition: background .3s; } #tour .tr-dots i.on { background: var(--orange); }
 #tour h3 { margin: 10px 0 4px; font: 700 19px/1.25 var(--f-display); color: #fff; letter-spacing: -.01em; }
 #tour p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--lav-2); }
-#tour .tr-act { display: flex; gap: 8px; margin-top: 12px; }
+#tour .tr-act { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+body:has(#tour:not([hidden])) #legend { display: none; } /* the card sits where the legend is */
 
 /* audit trail */
 .au-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; } .au-head h3 { margin: 0; }
@@ -1833,7 +1842,7 @@ body.pro .wm-name { letter-spacing: 0; }
 .bd-row.sel { border-color: var(--orange); }
 .bd-row.bd-att::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 3px; border-radius: 6px 0 0 6px; background: #ffb020; }
 #board button { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
-#board button.btn { padding: 9px 16px; background: var(--orange); color: #fff; }
+#board button.btn { padding: 9px 16px; background: var(--orange); color: var(--orange-ink); }
 #board button:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; border-radius: 4px; }
 .bd-name { display: grid; gap: 4px; min-width: 0; } .bd-name b { font-size: 15.5px; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bd-name span { font: 500 11px/1.3 var(--f-mono); color: var(--lav-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1844,7 +1853,7 @@ body.pro .wm-name { letter-spacing: 0; }
 .bd-mono { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 4px; font: 600 12px/1 var(--f-mono); font-style: normal; color: var(--lav-2); background: var(--hull-3); box-shadow: inset 0 0 0 1px var(--rim); }
 .bd-m span { display: grid; min-width: 0; } .bd-m b { font-size: 12.5px; font-weight: 600; color: var(--lav); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bd-m em { font-style: normal; font-size: 11.5px; color: var(--lav-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bd-m.busy .bd-mono { color: #fff; background: var(--orange); box-shadow: none; animation: bdpulse 1.6s ease-in-out infinite; } .bd-m.busy em { color: var(--cyan); }
+.bd-m.busy .bd-mono { color: var(--orange-ink); background: var(--orange); box-shadow: none; animation: bdpulse 1.6s ease-in-out infinite; } .bd-m.busy em { color: var(--cyan); }
 .bd-m.wait .bd-mono { color: #1d1400; background: #ffb020; box-shadow: none; } .bd-m.wait em { color: #ffb020; }
 .bd-m.wait.k-error .bd-mono { color: #fff; background: var(--st-error); } .bd-m.wait.k-error em { color: #ff8fa1; }
 @keyframes bdpulse { 50% { box-shadow: 0 0 0 4px rgba(255, 255, 255, .22); } }
@@ -1855,7 +1864,7 @@ body.pro .wm-name { letter-spacing: 0; }
 .bd-tasks { display: flex !important; gap: 14px; } .bd-tasks span { display: grid; font-size: 11px; color: var(--lav-3); } .bd-tasks b { font: 600 15px/1.2 var(--f-mono); color: var(--lav); } .bd-tasks.zero b { color: var(--lav-3); } .bd-tasks:hover b { color: var(--cyan); }
 .bd-week { font: 500 12px/1.3 var(--f-mono); color: var(--lav-2); white-space: nowrap; }
 #board .bd-open { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 10px 0 12px; border: 1px solid var(--rim); border-radius: 5px; font-size: 12.5px; font-weight: 600; color: var(--lav); }
-#board .bd-open:hover, .bd-row.sel .bd-open { background: var(--orange); border-color: var(--orange); color: #fff; }
+#board .bd-open:hover, .bd-row.sel .bd-open { background: var(--orange); border-color: var(--orange); color: var(--orange-ink); }
 .bd-m.fin .bd-mono { color: var(--st-done); box-shadow: inset 0 0 0 1px rgba(47, 210, 127, .5); } .bd-m.fin em { color: var(--st-done); }
 .bd-warn { margin: 14px 0 0; padding: 10px 14px; border: 1px solid rgba(255, 176, 32, .5); border-radius: 6px; color: #ffcf7a; font-size: 13px; }
 .bd-empty { padding: 56px 20px; text-align: center; border: 1px dashed var(--rim); border-radius: 6px; color: var(--lav-2); } .bd-empty p { margin: 0 0 14px; }
@@ -1888,7 +1897,7 @@ body.pro .send { border-radius: 6px; box-shadow: none; } body.pro .send:active {
 body.pro .send:disabled { background: var(--hull-3); color: var(--lav-3); box-shadow: none; } body.pro .send.stop { background: var(--hull-3); box-shadow: inset 0 0 0 1px var(--rim); }
 body.pro .toast { background: var(--hull-3); color: var(--lav); border: 1px solid var(--rim); border-radius: 6px; }
 body.pro .plan-body, body.pro .tc-body { background: var(--hull-2); color: var(--lav); border: 1px solid var(--rim); border-radius: 6px; }
-body.pro .seg button[aria-checked="true"], body.pro .tt.on, body.pro .ll-kinds button[aria-pressed="true"] { background: var(--orange); border-color: var(--orange); color: #fff; box-shadow: none; }
+body.pro .seg button[aria-checked="true"], body.pro .tt.on, body.pro .ll-kinds button[aria-pressed="true"] { background: var(--orange); border-color: var(--orange); color: var(--orange-ink); box-shadow: none; }
 body.pro #jump { box-shadow: none; }
 /* nothing rounded like a toy, nothing with a hard "pressed" shadow, no loud badges */
 body.pro dialog { box-shadow: 0 24px 60px rgba(0, 0, 0, .6); }
@@ -2286,10 +2295,11 @@ body.wt-chat #btn-toproject { display: none !important; }
 /* JS Study: Ctrl + wheel zooms the reading panes (not the panes with a code editor; their editor font grows instead) */
 #st-today > *, #st-learn > *, #st-quiz > *, #st-say > *, #st-tips > * { zoom: var(--st-zoom, 1); }
 body.pro:has(#study:not([hidden])) #zoom-hud:not([hidden]) { display: block !important; } /* the size badge still shows inside the study room */
-/* Ayağa kaldır: başlığın sağ üstünde, durumuna göre renk alan düğme (public/launchui.js) */
+/* Start up: the button at the top right of the header, coloured by its state (public/launchui.js) */
 .agent-head { position: relative; }
-.agent-head:has(#launch:not([hidden])) .agent-id { padding-right: 150px; }
-.launch { position: absolute; top: 16px; right: 16px; z-index: 3; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 12px; border-radius: 999px; border: 1.5px solid var(--hull-3); background: var(--void); color: var(--lav); font: 700 12.5px/1 var(--f-display); cursor: pointer; white-space: nowrap; transition: border-color .15s, background .15s, color .15s; }
+/* room is reserved on the name line only: narrowing the whole block cut the status down to "I…" and wrapped the path onto two lines */
+.agent-head:has(#launch:not([hidden])) .agent-id h2 { padding-right: 150px; }
+.launch { position: absolute; top: 14px; right: 16px; z-index: 3; display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 12px; border-radius: 999px; border: 1.5px solid var(--hull-3); background: var(--void); color: var(--lav); font: 700 12.5px/1 var(--f-display); cursor: pointer; white-space: nowrap; transition: border-color .15s, background .15s, color .15s; }
 .launch:hover { border-color: var(--rim); }
 .launch:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
 .launch .ln-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lav-3); flex: none; }
@@ -2335,16 +2345,16 @@ body.pro:has(#study:not([hidden])) #zoom-hud:not([hidden]) { display: block !imp
 @keyframes ln-spin { to { transform: rotate(360deg); } }
 @media (max-width: 700px) { .ln-row { grid-template-columns: 1fr 1fr; } .ln-row .ln-cmd { grid-column: 1 / -1; } }
 
-/* Yazarken sayfa yeniden dizilmesin: kutunun yüksekliği yalnızca satır sayısı değişince JS'ten ayarlanır (app.js fitPrompt);
-   boyut kısıtlaması sayesinde bir tuş yalnızca kutunun kendisini düzenler, uzun bir sohbeti değil. Aynısı saniyede bir
-   güncellenen çalışma şeridi için de: sabit yükseklik + kısıtlama, sohbeti her saniye yeniden dizdirmez. */
+/* Typing must not lay the page out again: the box's height is set from JS only when its line count changes (app.js
+   fitPrompt), and with size containment a keystroke lays out the box alone, not a long conversation. The same goes for
+   the activity strip that updates every second: a fixed height plus containment keeps the conversation out of it. */
 #prompt { contain: strict; }
 #activity { contain: strict; height: 38px; box-sizing: border-box; }
 
 /* ================================================================
-   Ofis görünümü, kapkara temayla aynı dilde. Tek vurgu kehribar; cevap balonu ve yazı kutusu artık koyu (ekrandaki en
-   parlak şey beyaz bir balon olmasın); durum renkleri yalnızca küçük işaretlerde. Kurumsal görünümün kuralları
-   (body.pro …) daha özgül olduğu için bunların üstüne yazmaya devam eder.
+   The office view, in the same language as the pitch-black theme. Amber is the only accent; the reply bubble and the
+   message box are dark now (the brightest thing on screen should not be a white bubble); status colours live in small
+   marks only. The professional view's rules (body.pro …) are more specific, so they keep overriding these.
    ================================================================ */
 #panel { border-left: 1px solid var(--rim); }
 .msg.assistant { background: #141414; color: #e9e7e3; border: 1px solid #242424; box-shadow: 0 3px 0 #060606; }
@@ -2364,10 +2374,10 @@ body.pro:has(#study:not([hidden])) #zoom-hud:not([hidden]) { display: block !imp
 .cb-pill.risky { background: transparent; color: #ff8fa1; box-shadow: inset 0 0 0 1px rgba(255, 77, 106, .5); } .cb-pill.risky svg { color: #ff8fa1; }
 .send:disabled { background: #1c1c1c; color: #6f6d69; box-shadow: 0 3px 0 #050505; }
 .send.stop { background: #1c1c1c; box-shadow: 0 3px 0 #050505, inset 0 0 0 1px #333; }
-/* "Demoyu izle" teklifi tam ekran bölümlerin (Kapsam, Görevler, Git…) üstünde durmasın; oynarken duran anlatım kartı kalır. */
+/* The "watch the demo" offer does not sit on top of full-screen sections (Scope, Tasks, Git…); the narration card of a tour that is playing stays. */
 body:has(#library:not([hidden]), #editor:not([hidden]), #runs:not([hidden]), #practice:not([hidden]), #study:not([hidden]), #tasks:not([hidden]), #reqs:not([hidden]), #git:not([hidden])) #tour.offer { display: none; }
-/* Kapsam başlığı: dört adım (çıkar → karşılaştır → doğrulat → ikinci görüş) gerçekten bir sıra; tek bir birleşik kontrol
-   olarak ve numaralı durur. Yan eylemler sessiz, tek ana eylem Kanıt raporu. */
+/* Scope header: the four steps (extract → compare → verify → second opinion) really are a sequence, so they stand as one
+   joined, numbered control. The side actions are quiet; the one main action is the Proof report. */
 .rq-flow { display: inline-flex; border: 1px solid var(--rim); border-radius: 12px; overflow: hidden; counter-reset: rqstep; background: var(--hull); }
 .rq-flow .btn { counter-increment: rqstep; height: 34px; padding: 0 12px 0 8px; gap: 7px; border-radius: 0; box-shadow: none; background: transparent; color: var(--lav-2); font-weight: 600; transform: none; }
 .rq-flow .btn::before { content: counter(rqstep); display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: var(--hull-3); color: var(--lav-2); font: 700 10.5px/1 var(--f-mono); }
@@ -2375,10 +2385,34 @@ body:has(#library:not([hidden]), #editor:not([hidden]), #runs:not([hidden]), #pr
 .rq-flow .btn:hover { background: var(--hull-3); color: #fff; } .rq-flow .btn:hover::before { background: var(--orange); color: var(--orange-ink); }
 .rq-flow .btn:active { transform: none; box-shadow: none; }
 .btn.quiet { background: transparent; box-shadow: none; color: var(--lav-2); padding: 0 10px; } .btn.quiet:hover { background: var(--hull-3); color: #fff; }
-/* Proje başlığındaki araç çubuğu dar panelde ikinci satıra taşmasın: 540 px altında yalnız "Kapsam" yazısı kalır,
-   diğerleri ikon olur (adları ipucunda); taşma yerine tek satır. */
+/* The toolbar in the project header never wraps to a second row on a narrow panel: under 540 px only "Scope" keeps its
+   label and the rest become icons (their names are in the tooltips); one row instead of an overflow. */
 @container panel (max-width: 540px) {
   .agent-head .head-actions { flex-wrap: nowrap; }
   .head-actions .hbtn:not(#btn-reqs) > span { display: none; }
   .head-actions .hbtn { padding: 0 7px; }
 }
+/* Scope header on a narrow screen (under 1600 px, which is most laptops), in two rows: the title, the search and the one
+   main action on top; the steps below. Squeezed into one row the search box was crushed and the Proof report dropped
+   to a row of its own. */
+.rq-steps { display: flex; align-items: center; gap: 6px; min-width: 0; }
+@media (max-width: 1600px) {
+  #reqs .lib-top { grid-template-columns: auto minmax(0, auto) minmax(160px, 1fr) auto; row-gap: 10px; }
+  #reqs .rq-actions { display: contents; }
+  #reqs .rq-steps { grid-row: 2; grid-column: 2 / -1; justify-self: start; flex-wrap: wrap; row-gap: 6px; max-width: 100%; }
+  #reqs .rq-flow { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+}
+/* The bottom bar of the message box on a narrow panel (the default width on a 1366 px laptop): the icons and gaps tighten
+   a little so the model name is not cut to "Sonn…", and the permission pill gives up its share when it must. In the team
+   strip only the coloured dot stays, so the status is not left as a one-letter stub ("I…"); the name and the dot are
+   enough, and the tooltip has the words. */
+@container panel (max-width: 520px) {
+  .cbar { padding-left: 4px; padding-right: 4px; }
+  .cbar .cb-icon { width: 30px; }
+  .cbar .ctx { margin-right: 0; padding: 2px; }
+  #perm-btn { flex: 0 1 auto; }
+  .ts-chip { flex: 1 1 auto; justify-content: center; }
+  .ts-chip span { width: auto; flex: none; font-size: 0; gap: 0; }
+}
+/* Document header at laptop width: the secondary actions become icons, so the document name does not break into three lines. */
+@media (max-width: 1500px) { .lv-actions [data-act="app"] span, .lv-actions [data-act="edit"] span { display: none; } .lv-actions .btn.ghost { padding: 0 10px; } }

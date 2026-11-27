@@ -259,7 +259,7 @@ export function createLibrary(ctx) {
         </div>
         <div class="lv-actions">
           <button type="button" class="btn primary sm" data-act="chat">${I.chat}${t("Use in chat")}</button>
-          ${d.editable ? `<button type="button" class="btn ghost sm" data-act="edit">${I.edit}${t("Edit")}</button>` : ""}
+          ${d.editable ? `<button type="button" class="btn ghost sm" data-act="edit" title="${t("Edit")}">${I.edit}<span>${t("Edit")}</span></button>` : ""}
           <button type="button" class="btn ghost sm" data-act="app" title="${t("Open in the default application on this computer (Word, Excel…)")}">${I.ext}<span>${t("Open in app")}</span></button>
           <button type="button" class="hbtn icon-only" data-act="more" title="${t("Other")}" aria-label="${t("More actions")}">${I.dots}</button>
           <button type="button" class="hbtn icon-only${infoOpen ? " on" : ""}" data-act="info" title="${t("Info")}" aria-label="${t("Info")}" aria-pressed="${infoOpen}">${I.info}</button>

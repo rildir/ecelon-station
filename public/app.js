@@ -812,6 +812,7 @@ function applyView() {
   document.body.classList.toggle("pro", proView); $("#board").hidden = !proView; sfx.muted = proView; station.pauseSync();
   const b = $("#btn-view"); b.setAttribute("aria-pressed", String(proView)); b.title = proView ? t("Switch to the office view") : t("Switch to the professional view"); b.setAttribute("aria-label", b.title);
   if (proView) { if (live) stopLive(); renderBoardNow(); }
+  const ib = $("#inbox"); if (ib) { delete ib.dataset.key; renderInbox(); } // the approval queue has its own open/closed state in each view
 }
 $("#btn-view").onclick = () => { proView = !proView; lsSet(VIEW_KEY, proView ? "pro" : "office"); applyView(); };
 if (noGL) $("#btn-view").hidden = true; // nothing to switch to
@@ -1065,16 +1066,26 @@ async function playTour() {
   const skip = [t("Skip"), () => endTour()];
   const run = async (step, title, text, agent, prompt) => {
     if (!tour) return;
-    tourCard({ step, title, text, actions: [skip] }); station.focus(lead.id);
+    tourCard({ step, title, text, actions: [skip] });
+    await selectAgent(agent.id); station.focus(lead.id); // the working member's own conversation: the work is visible as it happens
+    if (!tour) return;
     await sendPrompt({ text: prompt }, agent); await waitRun(agent.id); await pause(900);
   };
   await run(1, t("The analyst reads the document"), t("It turns the linked analysis document into numbered requirements, each with the document's own wording."), analyst, t("Extract the requirements from the linked documents and save them to the Scope list."));
   await run(2, t("…and checks every item against the code"), t("Each requirement gets a status and a pointer to the file and line where it lives, or a note saying it is missing."), analyst, t("Compare the requirements with the code and update their status."));
   await run(3, t("A different agent verifies"), t("The tester did not write the code. It runs the scenarios and must attach evidence: lines or tests that really exist in the project."), tester, t("Verify the requirements with evidence."));
   if (!tour) return;
+  await selectAgent(lead.id); if (!tour) return;
   reqsUI.open(lead);
+  // the last card stays until it is closed: the report opens in its own tab, and the example request is the way back into the office
+  const tryIt = async () => {
+    endTour(); if (reqsUI.isOpen) reqsUI.close();
+    await selectAgent(lead.id); station.focus(lead.id);
+    const p = $("#prompt"); p.value = t("Add an endpoint for the low stock warning"); fitPrompt(p, true); p.focus();
+    toast(t("An example request is in the message box. Press Enter to send it."));
+  };
   tourCard({ step: 4, title: t("One item says “done” but nothing proves it"), text: t("That is a mismatch, not a green tick. The proof report puts the whole chain on one page you can hand to somebody else."),
-    actions: [[t("Open the proof report"), () => { window.open(`/api/reqs/${encodeURIComponent(teamKey(lead))}/report`, "_blank", "noopener"); endTour(); }, true], [t("Close"), () => endTour()]] });
+    actions: [[t("Open the proof report"), () => window.open(`/api/reqs/${encodeURIComponent(teamKey(lead))}/report`, "_blank", "noopener"), true], [t("Give the team a job"), tryIt], [t("Close"), () => endTour()]] });
 }
 function offerTour() {
   if (!meta.demo || tour || lsGet(TOUR_KEY, 0)) return;
@@ -1141,12 +1152,13 @@ function renderInbox() {
   const waiting = agents.filter((a) => a.attention?.kind === "permission" && !isBusy(a));
   box.hidden = !waiting.length; if (!waiting.length) { box.innerHTML = ""; return; }
   const key = waiting.map((a) => a.id + a.attention.at).join("|"); if (box.dataset.key === key) return; box.dataset.key = key;
-  let collapsed = false; try { const v = localStorage.getItem("inboxCollapsed"); collapsed = v === "1" || (v == null && proView); } catch {}
+  const ck = proView ? "inboxCollapsedPro" : "inboxCollapsed"; // remembered per view: over the 3D office it is open, over the professional list it stays closed until asked
+  let collapsed = proView; try { const v = localStorage.getItem(ck); if (v != null) collapsed = v === "1"; } catch {}
   box.classList.toggle("collapsed", collapsed);
   box.innerHTML = `<button type="button" class="ib-head" aria-expanded="${!collapsed}"><span class="ib-dot"></span>${t("Waiting for your approval ({n})", { n: waiting.length })}<svg class="ib-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>`;
   box.querySelector(".ib-head").onclick = (e) => {
     const c = !box.classList.contains("collapsed"); box.classList.toggle("collapsed", c); e.currentTarget.setAttribute("aria-expanded", String(!c));
-    try { localStorage.setItem("inboxCollapsed", c ? "1" : "0"); } catch {}
+    try { localStorage.setItem(ck, c ? "1" : "0"); } catch {}
   };
   const SHOW = 2;
   for (const a of waiting.slice(0, SHOW)) {
@@ -1767,11 +1779,18 @@ function fillDetail(d) {
   const pre = document.createElement("pre"); pre.className = "out" + (o.isError ? " bad" : "");
   pre.textContent = o.content.length > OUT_MAX ? o.content.slice(0, OUT_MAX) + "\n… " + t("{n} more characters", { n: o.content.length - OUT_MAX }) : o.content; det.append(pre);
 }
+// the station's own tools are named by what they do, not by their protocol name (mcp__team__…)
+function toolLabel(name) {
+  const L = { set_requirement_status: t("Scope"), save_requirements: t("Scope save"), list_requirements: t("Scope list"), requirement_detail: t("Scope detail"), verify_requirement: t("Verification"),
+    document_sections: t("Document sections"), mark_sections: t("Section marks"), report_missing_requirements: t("Missing requirements"),
+    create_task: t("New task"), list_tasks: t("Task list"), update_task: t("Task update"), notify_project: t("Sibling project") };
+  if (!name.startsWith("mcp__team__")) return name;
+  const k = name.slice(11); return L[k] || k.replace(/_/g, " ");
+}
 function toolRow(ev) {
   const d = addMsg("tool", `<div class="trow"><b></b><span></span><button type="button" class="topen" hidden title="${t("Show in folder")}">${ICON.folder}</button><em class="st">…</em></div><div class="tdetail" hidden></div>`);
   d.dataset.id = ev.toolUseId; d.dataset.name = ev.name;
-  const TOOL_LABEL = { mcp__team__set_requirement_status: t("Scope"), mcp__team__save_requirements: t("Scope save"), mcp__team__list_requirements: t("Scope list"), mcp__team__notify_project: t("Sibling project") };
-  d.querySelector("b").textContent = TOOL_LABEL[ev.name] || ev.name;
+  d.querySelector("b").textContent = toolLabel(ev.name);
   const sp = d.querySelector("span"); sp.textContent = relToAgent(ev.summary); sp.title = ev.summary || "";
   const det = d.querySelector(".tdetail"); d._input = ev.input; // the detail (diffs, file contents, outputs) is built when the row is opened: a long history has thousands of them
   if (isImagePath(ev.summary)) d.dataset.img = ev.summary;
@@ -1813,6 +1832,7 @@ function planCard(plan) {
 }
 
 // ---- permission card (tools that could not run)
+const PERM_OK = "Permission granted, continue where you left off."; // what every "allow" button sends; t("Permission granted, continue where you left off.") is its translation
 function denialCard(denials) {
   const specs = [...new Set(denials.flatMap((x) => x.specs || [x.spec]).filter(Boolean))];
   if (!specs.length) return;
@@ -1854,6 +1874,8 @@ function renderEvent(ev, replay = false) {
         chatEl().append(n); break;
       }
       const d = addMsg("user", "", ev.text);
+      // a permission card answered somewhere else (the approval queue, a notification, before a reload) is no longer a question
+      if (ev.text === PERM_OK || ev.text === t(PERM_OK)) for (const c of chatEl().querySelectorAll(".msg.perm .card-actions")) if (c.querySelector("button")) c.innerHTML = `<span class="muted-ok">${t("Allowed")}</span>`;
       if ((ev.text || "").length > 700 || (ev.text || "").split("\n").length > 12) { // long message: fold it
         d.classList.add("long");
         const more = document.createElement("button"); more.type = "button"; more.className = "more"; more.textContent = t("Show all");
@@ -2388,7 +2410,8 @@ function toolPhrase(name, summary = "") {
   const M = { Read: t("Reading: {file}", { file: f }), Edit: t("Editing: {file}", { file: f }), MultiEdit: t("Editing: {file}", { file: f }), Write: t("Writing: {file}", { file: f }), NotebookEdit: t("Editing: {file}", { file: f }),
     Bash: t("Command: {cmd}", { cmd }), PowerShell: t("Command: {cmd}", { cmd }), Grep: t("Searching: {query}", { query: summary }), Glob: t("Looking at files"), WebFetch: t("Reading a web page"), WebSearch: t("Searching the web"),
     mcp__team__assign_task: t("Assigning a task"), mcp__team__notify_project: t("Writing to a sibling project"), mcp__team__verify_requirement: t("Verifying"), mcp__team__save_requirements: t("Saving the scope"),
-    mcp__team__document_sections: t("Reading the document"), mcp__team__set_requirement_status: t("Updating the scope") };
+    mcp__team__document_sections: t("Reading the document"), mcp__team__set_requirement_status: t("Updating the scope"), mcp__team__mark_sections: t("Marking the document"),
+    mcp__team__create_task: t("Adding a task to the board"), mcp__team__update_task: t("Updating the task"), mcp__team__list_requirements: t("Reading the scope") };
   return (M[name] || (name.startsWith("mcp__team__") ? t("Scope") : `${name} ${f}`)).trim();
 }
 

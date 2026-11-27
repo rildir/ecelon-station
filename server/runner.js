@@ -218,6 +218,10 @@ export function uploadsDir(agentId) {
 export function summarizeToolInput(name, input = {}) {
   const role = input.role ?? input.rol, task = input.task ?? input.gorev;
   if (role && task) return `${role}: ${String(task).slice(0, 100)}`;
+  if (name.startsWith("mcp__team__")) { // the station's own tools: which item, what happened to it
+    const bits = [input.code || input.id, input.status || input.result, input.title, input.project, input.reason, input.filter].filter((x) => typeof x === "string" && x);
+    if (bits.length) return bits.join(" · ").slice(0, 120);
+  }
   const pick = input.file_path || input.path || input.command || input.pattern || input.query || input.url || input.description || "";
   const s = typeof pick === "string" ? pick : JSON.stringify(pick);
   return s.length > 120 ? s.slice(0, 117) + "..." : s;

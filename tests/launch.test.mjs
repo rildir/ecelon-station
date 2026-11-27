@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
-import { cleanSteps, digest, linksFor, planPrompt, portOpen } from "../server/launch.js";
+import { cleanSteps, defaultPort, digest, facts, guessPlan, linksFor, planPrompt, portOpen } from "../server/launch.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "launch-"));
 const fe = path.join(tmp, "fe"), be = path.join(tmp, "be");
@@ -63,4 +63,28 @@ test("linksFor finds the address and an API's docs page, and does not mistake a 
     assert.deepEqual(await linksFor(api.address().port), { url: `http://localhost:${api.address().port}/swagger`, docs: `http://localhost:${api.address().port}/swagger` });
     assert.deepEqual(await linksFor(spa.address().port), { url: `http://localhost:${spa.address().port}/`, docs: null });
   } finally { api.close(); spa.close(); }
+});
+
+test("a plan without the model: the target's start script, and first the project whose port it calls", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guess-"));
+  const api = path.join(root, "api"), shop = path.join(root, "shop"), lib = path.join(root, "lib");
+  fs.mkdirSync(path.join(api, "src"), { recursive: true }); fs.mkdirSync(path.join(shop, "src"), { recursive: true }); fs.mkdirSync(lib);
+  fs.writeFileSync(path.join(api, "package.json"), JSON.stringify({ scripts: { dev: "node --watch src/server.js", test: "node --test" } }));
+  fs.writeFileSync(path.join(api, "src/server.js"), "const PORT = process.env.PORT || 3100; app.listen(PORT);");
+  fs.writeFileSync(path.join(shop, "package.json"), JSON.stringify({ scripts: { dev: "vite", build: "vite build" }, devDependencies: { vite: "5" } }));
+  fs.writeFileSync(path.join(shop, "src/api.js"), 'const BASE = import.meta.env.VITE_API_URL || "http://localhost:3100?token=SECRET";');
+  fs.writeFileSync(path.join(lib, "package.json"), JSON.stringify({ scripts: { build: "tsc" } }));
+  const ps = [{ team: "a", name: "api", cwd: api }, { team: "s", name: "shop", cwd: shop }, { team: "l", name: "lib", cwd: lib }];
+  assert.deepEqual(facts(api).serves, [3100]); assert.deepEqual(facts(shop).calls, [3100]);
+  assert.doesNotMatch(facts(shop).text, /SECRET|token/); // a query string never leaves the file
+  assert.deepEqual(guessPlan(ps[1], ps).map((x) => [x.project, x.cmd, x.port]), [["api", "npm run dev", 3100], ["shop", "npm run dev", 5173]]);
+  assert.deepEqual(guessPlan(ps[0], ps).map((x) => [x.project, x.cmd, x.port]), [["api", "npm run dev", 3100]]);
+  assert.equal(guessPlan(ps[2], ps), null); // a library with only a build script cannot be started
+});
+
+test("default ports of well-known dev servers, and a port named by the script itself", () => {
+  assert.equal(defaultPort("vite"), 5173); assert.equal(defaultPort("ng serve"), 4200); assert.equal(defaultPort("next dev"), 3000); assert.equal(defaultPort("node x.js"), null);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "port-"));
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ scripts: { "start:dev": "nx serve app --port 4201", start: "nx serve app" } }));
+  assert.deepEqual(facts(dir).start, { cmd: "npm run start:dev", dir: "", port: 4201 });
 });

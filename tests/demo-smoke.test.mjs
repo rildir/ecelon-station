@@ -77,17 +77,21 @@ test("task board: add, start for a role, mark done, delete", async () => {
   const lead = agents.find((a) => a.name === "aurora-api" && a.role === "dev");
   const team = lead.team || lead.id;
   const call = (method, p, body) => fetch(base + p, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, body: await r.json() }));
+  // the flow above left two tasks: the analyst's question for the person, the tester's missing piece for the developer
+  const left = await until(async () => { const l = (await api(`/api/tasks/${team}`)).items; return l.length === 2 ? l : null; });
+  assert.deepEqual(left.map((x) => x.role).sort(), ["dev", "user"]);
+  assert.ok(left.every((x) => x.req.length === 1 && x.detail));
   const added = await call("POST", `/api/tasks/${team}`, { title: "Run the check-and-note tests", role: "tester", priority: "high", detail: "dotnet test; report the result" });
   assert.equal(added.status, 200); assert.match(added.body.id, /^T-\d{3}$/);
   const mine = await call("POST", `/api/tasks/${team}`, { title: "Approve the bank migration", role: "user" });
   assert.equal((await call("POST", `/api/tasks/${team}/${mine.body.id}/start`)).status, 400); // only the person can do it
   assert.equal((await call("POST", `/api/tasks/${team}`, { title: "  ", role: "tester" })).status, 400);
-  assert.deepEqual(await api(`/api/tasks/${team}/summary`), { total: 2, open: 2, doing: 0, toUser: 1 });
+  assert.deepEqual(await api(`/api/tasks/${team}/summary`), { total: 4, open: 4, doing: 0, toUser: 2 });
   const started = await until(async () => { const r = await call("POST", `/api/tasks/${team}/${added.body.id}/start`); return r.status === 200 ? r : null; });
   assert.ok(started.body.ok);
   const list = await api(`/api/tasks/${team}`);
   assert.equal(list.items.find((x) => x.id === added.body.id).status, "doing");
   assert.equal((await call("PATCH", `/api/tasks/${team}/${added.body.id}`, { status: "done", note: "ok" })).body.status, "done");
   assert.equal((await call("DELETE", `/api/tasks/${team}/${mine.body.id}`)).status, 200);
-  assert.equal((await api(`/api/tasks/${team}`)).items.length, 1);
+  assert.equal((await api(`/api/tasks/${team}`)).items.length, 3);
 });
