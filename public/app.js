@@ -1671,6 +1671,17 @@ function addDoc(id) {
 const chatEl = () => $("#chat");
 const nearBottom = () => { const c = chatEl(); return c.scrollHeight - c.scrollTop - c.clientHeight < 120; };
 let stick = true;
+/** In a run that goes on for long, drop the oldest messages from the page (not from the history) once there are well
+ *  over CHAT_LIVE_MAX of them and you are reading at the bottom. "Show earlier messages" at the top draws them again. */
+function trimChat() {
+  const c = chatEl(); if (c.childElementCount <= CHAT_LIVE_MAX + 150 || !nearBottom()) return;
+  let n = c.childElementCount - CHAT_LIVE_MAX, el = c.firstElementChild;
+  while (el && n > 0) { const next = el.nextElementSibling; if (!el.classList.contains("chat-older") && el !== todoCard && el !== liveBubble && el !== liveThink) { el.remove(); n--; } el = next; }
+  if (!c.querySelector(":scope > .chat-older")) {
+    const more = document.createElement("button"); more.type = "button"; more.className = "chat-older";
+    more.textContent = t("Show earlier messages"); more.onclick = () => loadChat(true); c.prepend(more);
+  }
+}
 function addMsg(cls, html, text) {
   const d = document.createElement("div"); d.className = "msg " + cls;
   if (text !== undefined) d.textContent = text; else d.innerHTML = html;
@@ -2352,6 +2363,7 @@ function connectWS() {
       renderEvent(ev);
       // a long live session keeps adding to the page; when a run ends and you are at the bottom anyway, redraw just the tail
       if (ev.type === "result" && chatEl().childElementCount > CHAT_LIVE_MAX && nearBottom()) loadChat();
+      else trimChat(); // an hour-long run never ends: keep the page bounded while it goes on
     }
   };
   ws.onclose = () => {
@@ -2434,12 +2446,12 @@ $("#prompt-form").addEventListener("submit", async (e) => {
   // "@Tester try this" → the message goes to the tester, with that role's last result attached
   const low = text.toLocaleLowerCase(locale());
   const to = teamOf(a).find((m) => m.id !== a.id && (low.startsWith("@" + roleLabel(m).toLocaleLowerCase(locale()) + " ") || low === "@" + roleLabel(m).toLocaleLowerCase(locale())));
-  $("#prompt").value = ""; $("#prompt").style.height = ""; closeMention();
+  $("#prompt").value = ""; $("#prompt").style.height = ""; promptLen = 0; closeMention();
   try {
     const images = [];
     for (const f of toSend) images.push((await api(`/api/agents/${a.id}/upload`, { method: "POST", body: { name: f.name, dataUrl: f.dataUrl } })).path);
     if (to) {
-      $("#prompt").value = ""; $("#prompt").style.height = ""; closeMention();
+      $("#prompt").value = ""; $("#prompt").style.height = ""; promptLen = 0; closeMention();
       const rest = text.slice(roleLabel(to).length + 1).trim() || meta.roles?.[roleOf(to)]?.handoff || "";
       await handoff(to, rest, { images: images.length ? images : [], docs });
       return;
@@ -2517,7 +2529,17 @@ $("#prompt").addEventListener("keydown", (e) => {
   }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#prompt-form").requestSubmit(); }
 });
-$("#prompt").addEventListener("input", (e) => { const t = e.target; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 200) + "px"; updateMention(); });
+// The box grows with its text without making the page lay itself out again on every key: #prompt is size-contained
+// (style.css), so typing only lays out the box itself, and its height is touched only when the number of lines changes.
+// (Before, every key set height:auto and read scrollHeight, and each of those laid out the whole conversation: with an
+// hour of tool rows in the chat that was tens of milliseconds per key.)
+let promptLen = 0;
+function fitPrompt(t, force = false) {
+  const shorter = t.value.length < promptLen; promptLen = t.value.length;
+  if ((force || shorter) && t.style.height) { t.style.height = ""; } // may have lost lines: back to the minimum, then grow
+  if (t.scrollHeight > t.clientHeight + 1) t.style.height = Math.min(t.scrollHeight, 200) + "px";
+}
+$("#prompt").addEventListener("input", (e) => { fitPrompt(e.target); updateMention(); });
 $("#prompt").addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== $("#prompt")) closeMention(); }, 150));
 
 // ---- rename the agent (click the title)
@@ -2803,7 +2825,7 @@ function saveDraft(team) {
 }
 function restoreDraft(team) {
   const t = $("#prompt"); t.value = drafts[team] || "";
-  t.style.height = "auto"; if (t.value) t.style.height = Math.min(t.scrollHeight, 200) + "px";
+  fitPrompt(t, true);
 }
 { let tm; $("#prompt").addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(() => current() && saveDraft(teamKey(current())), 400); }); }
 $("#prompt-form").addEventListener("submit", () => { const a = current(); if (a) { delete drafts[teamKey(a)]; lsSet("ecelon.drafts", drafts); } }, true);

@@ -2116,5 +2116,6 @@
   "Waiting for port {port}…": "{port} portu bekleniyor…",
   "Waiting for it to be ready…": "Hazır olması bekleniyor…",
   "Open {url}": "{url} adresini aç",
-  "API docs": "API dokümanı"
+  "API docs": "API dokümanı",
+  "Show earlier messages": "Önceki mesajları göster"
 }

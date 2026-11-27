@@ -2340,3 +2340,9 @@ body.pro:has(#study:not([hidden])) #zoom-hud:not([hidden]) { display: block !imp
 .ln-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--hull-3); border-top-color: var(--orange); animation: ln-spin .8s linear infinite; }
 @keyframes ln-spin { to { transform: rotate(360deg); } }
 @media (max-width: 700px) { .ln-row { grid-template-columns: 1fr 1fr; } .ln-row .ln-cmd { grid-column: 1 / -1; } }
+
+/* Yazarken sayfa yeniden dizilmesin: kutunun yüksekliği yalnızca satır sayısı değişince JS'ten ayarlanır (app.js fitPrompt);
+   boyut kısıtlaması sayesinde bir tuş yalnızca kutunun kendisini düzenler, uzun bir sohbeti değil. Aynısı saniyede bir
+   güncellenen çalışma şeridi için de: sabit yükseklik + kısıtlama, sohbeti her saniye yeniden dizdirmez. */
+#prompt { contain: strict; }
+#activity { contain: strict; height: 38px; box-sizing: border-box; }
