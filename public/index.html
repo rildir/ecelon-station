@@ -467,12 +467,14 @@
       <input id="rq-q" type="search" data-i18n-attr="placeholder,aria-label" placeholder="Search requirements, codes, evidence or notes" autocomplete="off" aria-label="Search requirements"></label>
     <div class="rq-actions">
       <span id="rq-analyst" class="rq-analyst"></span>
+      <div class="rq-flow" role="group" data-i18n-attr="aria-label" aria-label="The steps, in order">
       <button type="button" class="btn ghost sm" data-act="extract" data-i18n-attr="title" title="The analyst extracts the requirements list from the linked documents (updates it if one exists)" data-i18n>Extract from document</button>
       <button type="button" class="btn ghost sm" data-act="compare" data-i18n-attr="title" title="The analyst compares every item with the code and updates its work status" data-i18n>Compare with code</button>
       <button type="button" class="btn ghost sm" data-act="verify" data-i18n-attr="title" title="The tester actually tries the unverified items and verifies them with evidence" data-i18n>Verify with the tester</button>
       <button type="button" class="btn ghost sm" data-act="review" data-i18n-attr="title" title="The reviewer reads the document independently of the list and finds requirements missing from it" data-i18n>Second opinion</button>
-      <button type="button" class="btn ghost sm" data-act="add" data-i18n>+ Item</button>
-      <button type="button" class="btn ghost sm" data-act="export" data-i18n-attr="title" title="Download as a Markdown report" data-i18n>Export</button>
+      </div>
+      <button type="button" class="btn ghost sm quiet" data-act="add" data-i18n>+ Item</button>
+      <button type="button" class="btn ghost sm quiet" data-act="export" data-i18n-attr="title" title="Download as a Markdown report" data-i18n>Export</button>
       <button type="button" class="btn primary sm" data-act="proof" data-i18n-attr="title" title="One page for a manager or a customer: what the document says, where it is in the code, how it was verified and by whom. Opens in a new tab; print it or save it." data-i18n>Proof report</button>
     </div>
   </header>

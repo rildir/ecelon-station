@@ -995,7 +995,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
 
     const doors = new THREE.Group(); g.add(doors);
     const label = labelSprite(lead.name); label.position.set(-2.5, 10.5, -2.5); g.add(label);
-    const ring = new THREE.Mesh(ringGeo(), new THREE.MeshBasicMaterial({ color: 0x5b8cff, toneMapped: false, transparent: true, opacity: 0.9, depthWrite: false }));
+    const ring = new THREE.Mesh(ringGeo(), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.9, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; ring.visible = false; g.add(ring);
     Object.assign(g.userData, { doors, label, ring });
     return g;

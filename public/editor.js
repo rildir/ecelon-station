@@ -164,7 +164,7 @@ export function createEditor(ctx) {
     $("#ed-other").hidden = !!(tb && tb.kind === "text");
     if (!$("#ed-diff").hidden) dropDiff();
     $("#ed-diff").hidden = true;
-    if (!tb) { $("#ed-other").innerHTML = `<div class="lv-none"><b>${t("Open a file")}</b><p>${t("Select one on the left or type its name with <kbd>Ctrl</kbd>+<kbd>P</kbd>. To search the project, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>.")}</p></div>`; }
+    if (!tb) { $("#ed-other").innerHTML = `<div class="lv-none"><div class="le-art"><svg viewBox="0 0 16 16"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9 3 7 13"/></svg></div><b>${t("Open a file")}</b><p>${t("Select one on the left or type its name with <kbd>Ctrl</kbd>+<kbd>P</kbd>. To search the project, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>.")}</p></div>`; }
     else if (tb.kind === "text") { ed.setModel(tb.model); if (tb.view) ed.restoreViewState(tb.view); setTimeout(() => ed.focus(), 0); }
     else if (tb.kind === "image") $("#ed-other").innerHTML = `<div class="ed-img"><img src="/api/agents/${P.agent.id}/fs/raw?path=${encodeURIComponent(tb.path)}&t=${tb.mtime}" alt=""><small>${esc(tb.path)} · ${Math.round(tb.size / 1024)} KB</small></div>`;
     else $("#ed-other").innerHTML = `<div class="lv-none"><b>${tb.kind === "big" ? t("File too large") : t("Binary file")}</b><p>${t("{path} ({kb} KB) cannot be opened here.", { path: esc(tb.path), kb: Math.round(tb.size / 1024) })}</p><button type="button" class="btn ghost sm" data-ed="reveal">${t("Show in file manager")}</button></div>`;

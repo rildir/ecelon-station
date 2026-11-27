@@ -266,6 +266,9 @@ $("#btn-practice").onclick = () => practiceUI.open();
 // JS Study: questions, coding tasks and notes; its content and progress are kept in data/study.json
 const studyUI = createStudy({ api, toast, confirmBox, onOpen: () => { station.pause(true); closePops(); }, onClose: () => { station.pause(false); } });
 $("#btn-study").onclick = () => studyUI.open();
+// JS Study is parked while the station itself is being readied for release: its button stays out of the top bar unless
+// it is switched on for this browser (open the page once with ?study=1; ?study=0 switches it off again).
+{ const q = new URLSearchParams(location.search).get("study"); if (q === "1" || q === "0") lsSet("ecelon.study", q); $("#btn-study").hidden = lsGet("ecelon.study", "0") !== "1"; }
 let tasksSeq = 0;
 async function renderTasksBadge(a = current()) {
   if (!a) return; const seq = ++tasksSeq;
@@ -1046,7 +1049,7 @@ async function waitRun(id, max = 60000) {
 }
 function tourCard({ step = 0, title, text, actions = [] }) {
   const box = $("#tour"); if (box.parentNode !== document.body) document.body.append(box); // above every screen, the Scope screen included
-  box.hidden = false;
+  box.hidden = false; box.classList.toggle("offer", step === 0); // the offer (not yet playing) steps aside on full screens
   box.querySelector(".tr-dots").innerHTML = [1, 2, 3, 4].map((i) => `<i class="${i <= step ? "on" : ""}"></i>`).join("");
   box.querySelector("h3").textContent = title; box.querySelector("p").textContent = text;
   const act = box.querySelector(".tr-act"); act.innerHTML = "";
