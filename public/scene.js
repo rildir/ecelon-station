@@ -52,7 +52,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
   new ResizeObserver(() => { resize(); if (kit.ready) { renderer.shadowMap.needsUpdate = true; renderer.render(scene, cam); } slowFrames = 0; resizingUntil = performance.now() + 400; }).observe(canvas);
 
   // ---- light (only two lights, fixed)
-  const hemi = new THREE.HemisphereLight(0xdfe6ff, 0x30364a, 1.6); scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(0xf3f0ea, 0x2c2c2e, 1.6); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff4e0, 2.4);
   sun.position.set(30, 60, 18); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004;
@@ -72,8 +72,31 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
     "lounge-sofa", "lounge-design-sofa", "lounge-chair", "lounge-design-chair", "coat-rack-standing", "side-table", "side-table-drawers",
     "table-coffee", "table-coffee-glass", "television-modern", "cabinet-television", "radio", "bear", "stool-bar", "table-round",
     "chair-modern-cushion"];
+  // The space kit is painted from one palette image whose walls and floors are lavender and navy. On the black page that
+  // reads as a toy; here the blues and purples of that image become neutral graphite (same lightness, a little deeper),
+  // and the kit's orange trim stays as the one warm accent. Done once on the shared image, no asset is changed on disk.
+  let shellMap = null;
+  function graphiteMap(tex) {
+    if (shellMap) return shellMap;
+    const img = tex.image, c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
+    const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], gr = px[i + 1], b = px[i + 2], mx = Math.max(r, gr, b), mn = Math.min(r, gr, b), df = mx - mn;
+      if (df < 8) continue; // already neutral
+      const h = mx === r ? (((gr - b) / df) % 6 + 6) % 6 * 60 : mx === gr ? ((b - r) / df + 2) * 60 : ((r - gr) / df + 4) * 60;
+      if (h < 185 || h > 335) continue; // warm colours and greens stay
+      const v = Math.round(255 * Math.pow((0.299 * r + 0.587 * gr + 0.114 * b) / 255, 1.22) * 0.94);
+      px[i] = Math.min(255, v + 3); px[i + 1] = Math.min(255, v + 1); px[i + 2] = v; // a breath of warmth, not blue
+    }
+    g.putImageData(d, 0, 0);
+    shellMap = new THREE.CanvasTexture(c);
+    for (const k of ["colorSpace", "flipY", "wrapS", "wrapT", "magFilter", "minFilter", "generateMipmaps", "anisotropy"]) shellMap[k] = tex[k];
+    shellMap.needsUpdate = true; return shellMap;
+  }
+  const graphiteShell = (gltf) => gltf?.scene.traverse((o) => { if (o.isMesh && o.material?.map?.image) { o.material.map = graphiteMap(o.material.map); o.material.needsUpdate = true; } });
   Promise.all([
-    ...["room-large", "corridor", "gate-door", "gate-door-window", "cables"].map(async (n) => { kit[n] = await asset(`/assets/space/${n}.glb`); }),
+    ...["room-large", "corridor", "gate-door", "gate-door-window", "cables"].map(async (n) => { kit[n] = await asset(`/assets/space/${n}.glb`); graphiteShell(kit[n]); }),
     ...FURN.map(async (n) => { kit["f:" + n] = await asset(`/assets/furniture/${n}.glb`); }),
   ]).then(() => { kit.ready = true; setAgents(agentsCache); });
 
@@ -88,15 +111,15 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
     return MATS.get(key);
   };
   const M = {
-    deskTop: mat(0xe9e6f5), deskLeg: mat(0x5b628a), dark: mat(0x2b3045, { metalness: 0.4, roughness: 0.45 }),
-    accent: mat(0xf29a2e), chair: mat(0x3d4566), white: mat(0xffffff),
+    deskTop: mat(0xe6e3de), deskLeg: mat(0x55555a), dark: mat(0x242427, { metalness: 0.4, roughness: 0.45 }),
+    accent: mat(0xf29a2e), chair: mat(0x38383c), white: mat(0xffffff),
   };
   const SCREENS = new Map();
   function screenMaterial(seed) {
     if (!SCREENS.has(seed)) {
       const c = document.createElement("canvas"); c.width = 256; c.height = 160;
       const g = c.getContext("2d");
-      g.fillStyle = "#0e1424"; g.fillRect(0, 0, 256, 160);
+      g.fillStyle = "#0d0d10"; g.fillRect(0, 0, 256, 160);
       const cols = ["#6cc6ff", "#ffc66b", "#8be08b", "#c9a2ff", "#e6ebf5"];
       for (let i = 0; i < 12; i++) {
         g.fillStyle = cols[(i * 7 + seed) % cols.length];
@@ -147,16 +170,20 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
     wood: [0.896, 0.602, 0.393], woodDark: [0.679, 0.463, 0.3], red: [0.943, 0.371, 0.343], redDark: [0.611, 0.302, 0.294],
     blue: [0.36, 0.521, 0.868], green: [0.184, 0.822, 0.584], grey: [0.741, 0.823, 0.84], dark: [0.31, 0.39, 0.39],
   };
+  // One calm base for every room (bone desks, graphite frames) and one muted accent per project for its rug and sofa:
+  // the rooms differ, but none of them shouts. Status colours stay the only saturated thing on the stage.
+  const BASE = { wood: 0xd9d6d0, woodDark: 0x8d8a85, blue: 0x3a3a3e, green: 0x6fa583 };
   const THEMES = [
-    { wood: 0xd6d1ef, woodDark: 0x9e98c8, red: 0xf6a23a, redDark: 0xc8731a, blue: 0x5b628a, green: 0x6cc983 },  // lavender + orange
-    { wood: 0xb5dcec, woodDark: 0x6f9fbe, red: 0x2f6bea, redDark: 0x1d3aa6, blue: 0xffd166, green: 0x48c9b0 },  // ocean
-    { wood: 0xdfcba3, woodDark: 0xa88d64, red: 0x2fa36b, redDark: 0x1f7048, blue: 0xf0e6c8, green: 0x5cbf6a },  // forest
-    { wood: 0xf3cba7, woodDark: 0xc99069, red: 0xe5484d, redDark: 0xa8283b, blue: 0x8b6be0, green: 0x6cc983 },  // sunset
-    { wood: 0x737ba3, woodDark: 0x4a5180, red: 0x5fd0ff, redDark: 0x2f8fbf, blue: 0xff7aa8, green: 0x5fd0a0 },  // night
-    { wood: 0xecc193, woodDark: 0xb07f55, red: 0xff7aa8, redDark: 0xb04a74, blue: 0x3fb6c9, green: 0x2fd194 },  // sand + pink
-    { wood: 0xe4e4ea, woodDark: 0x9a9aa8, red: 0x222634, redDark: 0x0f121c, blue: 0xf6a23a, green: 0x7bd88f },  // graphite (black and white)
-    { wood: 0xc9e7c4, woodDark: 0x86b07e, red: 0xb892ff, redDark: 0x7a55d1, blue: 0xff9f5a, green: 0x3fae5a },  // mint + purple
+    { ...BASE, red: 0xe09a3e, redDark: 0xa86f24 },  // amber
+    { ...BASE, red: 0x5b84b1, redDark: 0x3c5c80 },  // steel
+    { ...BASE, red: 0x7fa88a, redDark: 0x56795f },  // sage
+    { ...BASE, red: 0xc46a4f, redDark: 0x8c4733 },  // clay
+    { ...BASE, red: 0x7d78a8, redDark: 0x55517a },  // slate violet
+    { ...BASE, red: 0xc9ab7a, redDark: 0x94794f },  // sand
+    { ...BASE, red: 0x4f9a9a, redDark: 0x336b6b },  // teal
+    { ...BASE, red: 0xb8687e, redDark: 0x834557 },  // rose
   ];
+
   const themeMats = new Map(); // `${theme}|${uuid}` -> material
   function themed(material, ti) {
     const key = `${ti}|${material.uuid}`;
@@ -817,17 +844,21 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
     s.scale.set(9.6, 1.8, 1); s.renderOrder = 12; // the room name is always above the bubbles
-    let label = text, lastState = null;
+    let label = text, lastState = null, dot = null;
+    // what the room is doing, as one small dot before its name (nothing while idle): from far away you see which rooms work
+    s.userData.setStatus = (col) => { if (col !== dot) { dot = col; s.userData.draw(lastState, true); } };
     s.userData.draw = (state, force = false) => { // true: selected, "target": drop target
       if (state === lastState && !force) return;
       lastState = state;
       const g = c.getContext("2d"); g.clearRect(0, 0, 512, 96);
-      g.fillStyle = state === "target" ? "#f6a23a" : state ? "#2f5bea" : "rgba(15,20,36,.88)";
+      g.fillStyle = state === "target" ? "#f6a23a" : state ? "#f4f2ee" : "rgba(12,12,12,.9)"; // selected: a white plate, not another colour
       g.beginPath(); g.roundRect(4, 4, 504, 88, 44); g.fill();
-      if (state) { g.strokeStyle = "rgba(255,255,255,.85)"; g.lineWidth = 4; g.stroke(); }
-      g.fillStyle = "#ffffff"; g.font = "700 46px 'Bricolage Grotesque', Segoe UI, system-ui, sans-serif";
+      if (!state) { g.strokeStyle = "rgba(255,255,255,.14)"; g.lineWidth = 2; g.stroke(); }
+      g.fillStyle = state ? "#0a0a0a" : "#ffffff"; g.font = "700 46px 'Bricolage Grotesque', Segoe UI, system-ui, sans-serif";
       g.textAlign = "center"; g.textBaseline = "middle";
-      g.fillText(label.length > 18 ? label.slice(0, 17) + "…" : label, 256, 50);
+      const shown = label.length > 18 ? label.slice(0, 17) + "…" : label;
+      if (dot) { const w = Math.min(g.measureText(shown).width, 400), x0 = 256 - w / 2 - 6; g.fillText(shown, 256 + 20, 50); g.fillStyle = dot; g.beginPath(); g.arc(x0, 48, 12, 0, Math.PI * 2); g.fill(); }
+      else g.fillText(shown, 256, 50);
       t.needsUpdate = true;
     };
     s.userData.setText = (v) => { if (v !== label) { label = v; s.userData.draw(lastState, true); } };
@@ -1379,9 +1410,11 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
       }
       if (of?.tvGlow.visible) of.tvMat.opacity = 0.55 + Math.sin(t * 9) * 0.12 + Math.sin(t * 23) * 0.08; // the TV flickers while it plays the day
       if (of && stepTest(of, dt, now)) { u.testing = of.test.state === "running"; if (of.test.parts) hot = Math.max(hot, now + 200); }
+      let roomSt = 0; // 0 idle · 1 done · 2 working · 3 error
       for (const m of u.members.values()) {
         const st = m.status || "idle", ch = m.ch, tt = t + m.t0;
         const working = st === "thinking" || st === "tool";
+        roomSt = Math.max(roomSt, st === "error" ? 3 : working ? 2 : st === "done" ? 1 : 0);
         anyWorking ||= working; anyTool ||= st === "tool";
         const since = (now - (m.statusAt || 0)) / 1000;
         let goal, sit = false, face = Math.PI / 4, sitY = 0.32;
@@ -1445,6 +1478,7 @@ export function createStation(canvas, { onSelect, onHover, onReorder = () => {},
         if (m.id === selectedId && u.members.size > 1) u.ring.position.set(m.cur.x, 0.06, m.cur.z);
         k++;
       }
+      u.label.userData.setStatus(roomSt === 3 ? "#ff4d6a" : roomSt === 2 ? "#ffb020" : roomSt === 1 ? "#2fd27f" : null);
       if (Math.random() < (u.testing ? 0.95 : anyTool ? 0.5 : anyWorking ? 0.2 : 0.04)) {
         u.leds.setColorAt((Math.random() * 20) | 0, Math.random() < 0.5 ? LED_OFF : LED_ON[Math.random() < 0.6 ? 0 : 1]);
         u.leds.instanceColor.needsUpdate = true;
