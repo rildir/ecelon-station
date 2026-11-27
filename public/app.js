@@ -349,7 +349,12 @@ $("#btn-run").onclick = () => openRun();
 refreshRunCounts();
 $("#btn-code").onclick = () => openCode();
 let gitT; const gitSoon = () => { clearTimeout(gitT); gitT = setTimeout(refreshGitSummary, 1200); };
-setInterval(refreshGitSummary, 45000);
+// Background polls rest while the window is hidden or minimized (a git status over every project every 45 s is real work
+// for the machine) and run once on return if one was skipped. Events from the server still update the page meanwhile.
+const polls = [];
+function poll(fn, ms) { const p = { fn, missed: false }; polls.push(p); setInterval(() => { if (document.hidden) p.missed = true; else fn(); }, ms); }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) for (const p of polls) if (p.missed) { p.missed = false; p.fn(); } });
+poll(refreshGitSummary, 45000);
 
 // ================= the office shows the real state =================
 // papers on the lead's desk = uncommitted changes, boxes by the door = unpushed commits, the plant = health
@@ -365,7 +370,7 @@ function wearOf(tk) {
   return Math.min(1, (ov.tasks?.old || 0) * 0.12 + (r.stale || 0) * 0.06 + (r.mismatches || 0) * 0.05 + (gs.changed > 150 ? 0.35 : gs.changed > 60 ? 0.15 : 0));
 }
 let ovT; const overviewSoon = () => { clearTimeout(ovT); ovT = setTimeout(refreshOverview, 800); };
-setInterval(refreshOverview, 60000);
+poll(refreshOverview, 60000);
 const leadOfTeam = (tk) => agents.find((x) => teamKey(x) === tk && roleOf(x) === "dev") || agents.find((x) => teamKey(x) === tk);
 function healthOf(tk) {
   const r = overview[tk]?.reqs, team = agents.filter((x) => teamKey(x) === tk);
@@ -381,7 +386,7 @@ async function refreshPayroll() {
   await Promise.all(teamOrder().map(async (tk) => { try { payroll.set(tk, await api(`/api/payroll/${encodeURIComponent(tk)}?since=${weekStart()}`)); } catch {} }));
   pushOffice();
 }
-setInterval(refreshPayroll, 120000);
+poll(refreshPayroll, 120000);
 function payrollBoard(tk) {
   const p = payroll.get(tk); if (!p) return null;
   const rows = p.members.filter((m) => m.costUsd > 0).sort((a, b) => b.costUsd - a.costUsd).map((m) => ({ name: meta.roles?.[m.role]?.label || m.name, usd: m.costUsd, money: money(m.costUsd), color: ROLE_COLOR[m.role] }));
@@ -2807,7 +2812,7 @@ if (meta.claudeMissing) { const w = $("#cli-warn"); w.textContent = meta.claudeM
 await refresh();
 lib.load().catch(() => {});
 refreshGitSummary(); refreshOverview(); refreshPayroll();
-setTimeout(offerTour, 1500); refreshCcSessions(); setInterval(refreshCcSessions, 180000);
+setTimeout(offerTour, 1500); refreshCcSessions(); poll(refreshCcSessions, 180000);
 applyView();
 connectWS();
 const q = new URLSearchParams(location.search).get("agent");
