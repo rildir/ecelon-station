@@ -13,7 +13,7 @@ numaralı gereksinimlere dönüşür, kodu lider yazar ve hiçbir madde, onu yaz
 ![Node 20+](https://img.shields.io/badge/node-20%2B-339933)
 ![Yalnızca yerel](https://img.shields.io/badge/%C3%A7al%C4%B1%C5%9F%C4%B1r-%25100%20yerel-success)
 
-<img src="docs/media/hero.gif" alt="Örnek ekip dokümanı gereksinimlere çeviriyor, kodla karşılaştırıyor, başka bir ajan doğruluyor ve dokümanın yapıldı dediği bir madde uyuşmazlık olarak çıkıyor" width="860">
+<img src="docs/media/hero.gif" alt="Tüm projelere tek mesaj: üç oda aynı anda işe başlıyor, birinin lideri gözünün önünde planlıyor, düzenliyor ve test ediyor" width="860">
 
 [English](README.md) · [Türkçe](README.tr.md)
 
@@ -100,15 +100,15 @@ birbirinin ve senin dosyalarına dokunmadan çalışabilir. Görev panosu her da
 incele, sonra **Birleştir** ya da **Dalı at**. Çakışma çalışma kopyanda asla yarım bırakılmaz: birleştirme iptal edilir
 ve dal senin için saklanır.
 
-<p align="center"><img src="docs/media/tasks.png" alt="Görev panosu: kendi dallarında çalışan iki görev ve değişiklikleri, bir testçi görevi ve kullanıcıya bir görev" width="860"></p>
-<p align="center"><img src="docs/media/branch-diff.png" alt="Bir görev dalının farkı, birleştirmeye hazır" width="860"></p>
+<p align="center"><img src="docs/media/tasks.png" alt="Görev panosu: senin kararını bekleyen bir madde ve geliştiricinin tamamladığı eksik parça, her biri kendi gereksinimine bağlı" width="860"></p>
+<p align="center"><img src="docs/media/git.png" alt="Git ekranı: ajanın rotaya yaptığı değişiklik, commit ve push için hazır" width="860"></p>
 
 ### Tek sohbet yerine her projede bir ekip
 Her projede bir **lider**, bir **analist**, bir **testçi** ve bir **gözden geçirici** vardır; her birinin kendi
 oturumu olur. Dosyaları yalnızca lider yazar; analist ve gözden geçirici okur; testçi sorunları sessizce "düzeltmek"
 yerine raporlar. İşi bir düğmeyle ya da mesaja `@tester` yazarak devret.
 
-<p align="center"><img src="docs/media/chat.png" alt="Solda projeler, sağda testçinin doğrulama sonucu ve izin kartıyla sohbeti" width="860"></p>
+<p align="center"><img src="docs/media/chat.png" alt="Solda ofis ve onayını bekleyen iki push; sağda testçinin doğrulama sonucuyla sohbeti" width="860"></p>
 
 ### Doküman kapsaması: hiçbir şey atlanmaz
 Dokümanın her paragrafı, liste maddesi, tablo satırı ve başlığı izlenir. Hiçbir gereksinimin kapsamadığı bölümler

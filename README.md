@@ -13,7 +13,7 @@ Run several tasks at once, each on its own git branch, and merge what you approv
 ![Node 20+](https://img.shields.io/badge/node-20%2B-339933)
 ![Local only](https://img.shields.io/badge/runs-100%25%20local-success)
 
-<img src="docs/media/hero.gif" alt="The sample team turns a spec into requirements, checks them against the code, a different agent verifies them, and one item the document calls done ends up as a mismatch" width="860">
+<img src="docs/media/hero.gif" alt="One message to every project: three rooms pick it up at once, and the lead of one of them plans, edits and tests in front of you" width="860">
 
 [English](README.md) · [Türkçe](README.tr.md)
 
@@ -100,15 +100,15 @@ at the same time without touching each other's files or yours. The task board sh
 the diff, then **Merge** or **Discard**. A conflict is never left half-done in your working copy: the merge is
 aborted and the branch is kept for you.
 
-<p align="center"><img src="docs/media/tasks.png" alt="Task board: two tasks running on their own branches with their changes, a tester task and a task for the user" width="860"></p>
-<p align="center"><img src="docs/media/branch-diff.png" alt="The diff of a task's branch, ready to merge" width="860"></p>
+<p align="center"><img src="docs/media/tasks.png" alt="Task board: a decision waiting for you and a missing piece the developer finished, each tied to its requirement" width="860"></p>
+<p align="center"><img src="docs/media/git.png" alt="The Git screen: the agent's change to the route, ready to commit and push" width="860"></p>
 
 ### A team per project, not a single chat
 Each project gets a **lead**, an **analyst**, a **tester** and a **reviewer**, each with its own session. Only the lead
 writes files; the analyst and reviewer read; the tester reports problems instead of quietly "fixing" them. Hand work
 over with a button or by typing `@tester`.
 
-<p align="center"><img src="docs/media/chat.png" alt="Projects on the left, the tester's chat on the right with its verification result and a permission card" width="860"></p>
+<p align="center"><img src="docs/media/chat.png" alt="The office on the left with two pushes waiting for your approval; the tester's chat on the right with its verification result" width="860"></p>
 
 ### Document coverage: nothing slips through
 Every paragraph, list item, table row and heading of the document is tracked. Sections that no requirement covers are
