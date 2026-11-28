@@ -13,7 +13,7 @@ numaralı gereksinimlere dönüşür, kodu lider yazar ve hiçbir madde, onu yaz
 ![Node 20+](https://img.shields.io/badge/node-20%2B-339933)
 ![Yalnızca yerel](https://img.shields.io/badge/%C3%A7al%C4%B1%C5%9F%C4%B1r-%25100%20yerel-success)
 
-<img src="docs/media/hero.gif" alt="Örnek ekip dokümanı gereksinimlere çeviriyor, kodla karşılaştırıyor, başka bir ajan doğruluyor ve dokümanın yapıldı dediği bir madde uyuşmazlık olarak çıkıyor" width="860">
+<img src="docs/media/hero.gif" alt="Tek mesaj kurgu bir ERP'nin sekiz ekibine gidiyor ve bütün odalar aynı anda çalışmaya başlıyor" width="860">
 
 [English](README.md) · [Türkçe](README.tr.md)
 
@@ -100,15 +100,15 @@ birbirinin ve senin dosyalarına dokunmadan çalışabilir. Görev panosu her da
 incele, sonra **Birleştir** ya da **Dalı at**. Çakışma çalışma kopyanda asla yarım bırakılmaz: birleştirme iptal edilir
 ve dal senin için saklanır.
 
-<p align="center"><img src="docs/media/tasks.png" alt="Görev panosu: kendi dallarında çalışan iki görev ve değişiklikleri, bir testçi görevi ve kullanıcıya bir görev" width="860"></p>
-<p align="center"><img src="docs/media/branch-diff.png" alt="Bir görev dalının farkı, birleştirmeye hazır" width="860"></p>
+<p align="center"><img src="docs/media/tasks.png" alt="Görev panosu: biri senin kararını bekleyen dört açık görev ve biten düşük stok uyarısı" width="860"></p>
+<p align="center"><img src="docs/media/git.png" alt="Git ekranı: düşük stok rotasının commit öncesi gerçek kod farkı" width="860"></p>
 
 ### Tek sohbet yerine her projede bir ekip
 Her projede bir **lider**, bir **analist**, bir **testçi** ve bir **gözden geçirici** vardır; her birinin kendi
 oturumu olur. Dosyaları yalnızca lider yazar; analist ve gözden geçirici okur; testçi sorunları sessizce "düzeltmek"
 yerine raporlar. İşi bir düğmeyle ya da mesaja `@tester` yazarak devret.
 
-<p align="center"><img src="docs/media/chat.png" alt="Solda projeler, sağda testçinin doğrulama sonucu ve izin kartıyla sohbeti" width="860"></p>
+<p align="center"><img src="docs/media/chat.png" alt="Stok odası yakından, sohbette testçinin doğrulama sonucu" width="860"></p>
 
 ### Doküman kapsaması: hiçbir şey atlanmaz
 Dokümanın her paragrafı, liste maddesi, tablo satırı ve başlığı izlenir. Hiçbir gereksinimin kapsamadığı bölümler
@@ -121,7 +121,7 @@ iddia edilmez, hesaplanır.
 Ofis için sade bir **kurumsal görünüm** (projeler, roller, kanıt, görevler; sahne, karakter ve ses yok) ve her projenin
 bir oda, her rolün masasında bir karakter olduğu 3D **ofis görünümü**. Tek tıkla geçilir.
 
-<p align="center"><img src="docs/media/board.png" alt="Kurumsal görünüm: kanıt çubuğuyla projeler, görevler ve bu haftaki çalışmalar" width="430"> <img src="docs/media/station.png" alt="Ofis görünümü: üç proje odası ve ajanları" width="430"></p>
+<p align="center"><img src="docs/media/board.png" alt="Kurumsal görünüm: kanıt çubuğuyla sekiz proje, görevler ve bu haftaki çalışmalar" width="430"> <img src="docs/media/station.png" alt="Ofis görünümü: kurgu bir ERP'nin sekiz proje odası" width="430"></p>
 
 ### Gerisi
 - **Denetim kaydı:** her komut, dosya yazma ve izin (ve kimin verdiği) yalnızca eklenebilen, hash zincirli bir kayıtta;
