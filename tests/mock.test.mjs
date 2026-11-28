@@ -13,14 +13,14 @@ process.env.MOCK_FAST = "1"; process.env.ECELON_DEMO = "1";
 const { runMock } = await import("../server/mockRunner.js");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mock-"));
-const proj = path.join(tmp, "aurora-api");
-fs.cpSync(path.resolve("demo/projects/aurora-api"), proj, { recursive: true });
+const proj = path.join(tmp, "aurora-stock");
+fs.cpSync(path.resolve("demo/projects/aurora-stock"), proj, { recursive: true });
 test.after(() => { rm(tmp); rm(DATA); });
 
 // runs one prompt and returns the events; `calls` collects what the agent did with the station's tools
 async function play(agent, prompt) {
   const evs = [], calls = [];
-  const a = { name: "aurora-api", cwd: proj, model: "sonnet", role: "dev", ...agent,
+  const a = { name: "aurora-stock", cwd: proj, model: "sonnet", role: "dev", ...agent,
     _tool: async (name, args) => { calls.push([name, args]); return { message: name === "list_requirements" ? "R-001 a\nR-002 b\nR-003 c\nR-004 d\nR-005 e" : "ok" }; } };
   const result = await runMock(a, prompt, (e) => evs.push(e)).promise;
   return { evs, calls, result, tools: evs.filter((e) => e.type === "tool_use").map((e) => `${e.name} ${e.summary}`.trim()) };

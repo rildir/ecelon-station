@@ -25,13 +25,13 @@ test.after(async () => { child?.kill(); await sleep(500); rm(DATA); });
 const until = async (fn, ms = 60000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(500); } throw new Error("timeout"); };
 const delegate = (id, role, task) => until(async () => { const r = await api(`/api/agents/${id}/delegate`, { role, task }); return r.ok ? r : null; });
 
-test("demo seed creates three projects with full teams and a linked document", async () => {
+test("demo seed creates eight ERP projects with full teams and a linked document", async () => {
   const agents = await api("/api/agents");
-  assert.equal(agents.length, 12);
-  assert.deepEqual([...new Set(agents.map((a) => a.name))].sort(), ["aurora-api", "aurora-mobile", "aurora-shop"]);
+  assert.equal(agents.length, 32);
+  assert.deepEqual([...new Set(agents.map((a) => a.name))].sort(), ["aurora-einvoice", "aurora-field", "aurora-finance", "aurora-payroll", "aurora-production", "aurora-purchasing", "aurora-sales", "aurora-stock"]);
   const lib = await api("/api/library");
   assert.equal(lib.docs.length, 1);
-  const api_ = agents.find((a) => a.name === "aurora-api" && a.role === "dev");
+  const api_ = agents.find((a) => a.name === "aurora-stock" && a.role === "dev");
   assert.deepEqual(lib.docs[0].agents, [api_.id]);
   const c = await api(`/api/reqs/${api_.id}/coverage`);
   assert.equal(c.stats.total, 10);
@@ -39,7 +39,7 @@ test("demo seed creates three projects with full teams and a linked document", a
 
 test("extract → compare → verify leaves one verified, one failed and one out-of-scope item awaiting approval", async () => {
   const agents = await api("/api/agents");
-  const team = agents.find((a) => a.name === "aurora-api" && a.role === "dev").id;
+  const team = agents.find((a) => a.name === "aurora-stock" && a.role === "dev").id;
   const analyst = agents.find((a) => a.team === team && a.role === "analyst").id;
   const tester = agents.find((a) => a.team === team && a.role === "tester").id;
   await delegate(analyst, "analyst", "Extract the requirements from the linked document and save them.");
@@ -58,7 +58,7 @@ test("extract → compare → verify leaves one verified, one failed and one out
 
 test("compact: the ring's token count drops, a note is logged, and the same session continues", async () => {
   const agents = await api("/api/agents");
-  const a = agents.find((x) => x.name === "aurora-shop" && x.role === "dev");
+  const a = agents.find((x) => x.name === "aurora-sales" && x.role === "dev");
   const none = await fetch(base + `/api/agents/${a.id}/compact`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
   assert.equal(none.status, 400, "no conversation yet → nothing to compact");
   await api(`/api/agents/${a.id}/prompt`, { text: "Show a stock warning in the cart" });
@@ -74,7 +74,7 @@ test("compact: the ring's token count drops, a note is logged, and the same sess
 
 test("task board: add, start for a role, mark done, delete", async () => {
   const agents = await api("/api/agents");
-  const lead = agents.find((a) => a.name === "aurora-api" && a.role === "dev");
+  const lead = agents.find((a) => a.name === "aurora-stock" && a.role === "dev");
   const team = lead.team || lead.id;
   const call = (method, p, body) => fetch(base + p, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, body: await r.json() }));
   // the flow above left two tasks: the analyst's question for the person, the tester's missing piece for the developer

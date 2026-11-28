@@ -1,6 +1,6 @@
-# Inventory Module — Analysis Document v3
+# Stock Module — Analysis Document v3
 
-This document defines the stock in/out processes and screens of the Aurora inventory module.
+This document defines the stock in/out processes and screens of the Aurora ERP stock module.
 
 # 1. Scope
 

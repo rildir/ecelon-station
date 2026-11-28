@@ -21,7 +21,7 @@ numaralı gereksinimlere dönüşür, kodu lider yazar ve hiçbir madde, onu yaz
 
 ## 30 saniyede dene
 
-Claude Code, API anahtarı ya da kendi projen gerekmez: demo, üç örnek projede senaryolu ajanlar çalıştırır.
+Claude Code, API anahtarı ya da kendi projen gerekmez: demo, kurgusal bir ERP içinde (modül başına bir oda, sekiz proje) senaryolu ajanlar çalıştırır.
 
 ```bash
 npx github:rildir/ecelon-station --demo

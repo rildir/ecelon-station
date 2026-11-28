@@ -21,7 +21,7 @@ Run several tasks at once, each on its own git branch, and merge what you approv
 
 ## Try it in 30 seconds
 
-No Claude Code, no API key and no project of your own needed: the demo runs scripted agents on three sample projects.
+No Claude Code, no API key and no project of your own needed: the demo runs scripted agents in a small fictional ERP: eight project rooms, one per module.
 
 ```bash
 npx github:rildir/ecelon-station --demo

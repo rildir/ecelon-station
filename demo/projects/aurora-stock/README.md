@@ -1,6 +1,6 @@
-# Aurora API
+# Aurora Stock
 
-Inventory and warehouse service for the Aurora shop. Express + a JSON file store (no database needed for the demo).
+Inventory and warehouse service for the Aurora ERP. Express + a JSON file store (no database needed for the demo).
 
 - `GET /inventory?code=&name=` — stock cards, filterable by code or name
 - `POST /transfers` — warehouse transfer slip (goes through approval)

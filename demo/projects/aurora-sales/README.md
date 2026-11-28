@@ -1,6 +1,6 @@
-# Aurora Shop
+# Aurora Sales
 
-Storefront for the Aurora catalogue (React + Vite). Talks to `aurora-api` for stock levels.
+Order portal for the Aurora catalogue (dealers place sales orders). React + Vite; talks to `aurora-stock` for stock levels.
 
 - `src/App.jsx` — routes and layout
 - `src/components/Cart.jsx` — cart with stock checks
