@@ -1,0 +1,318 @@
+// Start a project with one click, together with what it needs (its backend, a database container…).
+//
+// The first time, a small model is asked once to write a "launch plan" from a short digest of the projects on this
+// station (their scripts, the ports their configuration names; never secrets: .env files and connection strings are
+// not read, only localhost addresses are kept). The plan is shown to the user, who approves (and may edit) it before
+// anything runs; it is saved in data/launch/<team>.json. From then on, a click runs the plan without the model:
+// each step is started with the run panel's machinery, in order, and the next one waits until the step is ready
+// (its port answers, or its output shows an address). A step whose port already answers is left alone.
+import fs from "node:fs";
+import http from "node:http";
+import https from "node:https";
+import net from "node:net";
+import path from "node:path";
+import { t, langName } from "./i18n.js";
+import { dataPath, mkdirPrivate, writePrivate } from "./paths.js";
+import * as runs from "./runs.js";
+import { oneShot } from "./runner.js";
+
+export const LAUNCH_MODEL = "claude-haiku-5-5";
+const MOCK = process.env.MOCK === "1"; // demo mode: nothing is asked of a model and nothing is really started
+const DIR = dataPath("launch");
+const READY_MS = 300000; // a cold Angular or .NET build can take minutes
+const states = new Map(); // team → { state, steps: [{ label, project, port, state, run, note }], error, at }
+let emit = () => {};
+export function init(broadcast) { emit = broadcast; }
+
+const file = (team) => path.join(DIR, `${String(team).replace(/[^\w-]/g, "")}.json`);
+export function loadPlan(team) { try { return JSON.parse(fs.readFileSync(file(team), "utf8")); } catch { return null; } }
+function savePlan(team, plan) { mkdirPrivate(DIR); writePrivate(file(team), JSON.stringify(plan, null, 2)); return plan; }
+
+// ---------------------------------------------------------------- what the model is shown
+const read = (p, max = 60000) => { try { const s = fs.statSync(p); return s.isFile() && s.size <= max ? fs.readFileSync(p, "utf8") : null; } catch { return null; } };
+const json = (p) => { const s = read(p); if (!s) return null; try { return JSON.parse(s.replace(/^\uFEFF/, "").replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, "")); } catch { return null; } };
+const SKIP = new Set(["node_modules", ".git", "dist", "build", "bin", "obj", ".angular", ".nx", ".next", "coverage", "vendor", ".vs", ".idea", "out", "tmp"]);
+/** Files under `root`, at most `depth` folders down, whose name matches `re`. */
+function find(root, re, depth = 3, out = [], rel = "") {
+  if (out.length >= 40) return out;
+  let ents = []; try { ents = fs.readdirSync(path.join(root, rel), { withFileTypes: true }); } catch { return out; }
+  for (const e of ents) {
+    const r = rel ? rel + "/" + e.name : e.name;
+    if (e.isDirectory()) { if (depth > 0 && !SKIP.has(e.name) && !e.name.startsWith(".")) find(root, re, depth - 1, out, r); }
+    else if (re.test(e.name)) out.push(r);
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+const LOCAL = /\b(?:https?|wss?):\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|\*|\+)(?::\d{2,5})?[^\s"'`,;)]*/gi;
+const locals = (s) => [...new Set(((s || "").match(LOCAL) || []).map((u) => u.split(/[?#]/)[0]))].slice(0, 12); // no query string: it could carry a token
+const portsOf = (urls) => urls.map((u) => Number(/:(\d{2,5})(?:\/|$)/.exec(u)?.[1])).filter(Boolean);
+/** The port a well-known dev server listens on when nothing configures another one. */
+export function defaultPort(script) {
+  const c = String(script || "");
+  return /\bvite\b/.test(c) ? 5173 : /\bng serve\b|\bnx (serve|run)\b/.test(c) ? 4200 : /\bnext (dev|start)\b|react-scripts start|\bnest start\b|\bnuxt\b/.test(c) ? 3000 : /\bexpo start\b/.test(c) ? 8081 : /\bastro dev\b/.test(c) ? 4321 : null;
+}
+
+/** What is known about one project folder without running anything and without reading a secret: the text lines shown to
+ *  the model, the ports it serves, the local ports it calls, and its most likely start command. */
+export function facts(cwd) {
+  const lines = [], serves = new Set(), calls = new Set(); let start = null;
+  const serve = (...ps) => ps.forEach((x) => Number(x) && serves.add(Number(x)));
+  for (const rel of find(cwd, /^package\.json$/, 2).slice(0, 8)) {
+    const p = json(path.join(cwd, rel)); if (!p) continue;
+    const dir = path.dirname(rel) === "." ? "" : path.dirname(rel);
+    const pm = fs.existsSync(path.join(cwd, dir, "pnpm-lock.yaml")) ? "pnpm" : fs.existsSync(path.join(cwd, dir, "yarn.lock")) ? "yarn" : "npm";
+    const scripts = Object.entries(p.scripts || {}).filter(([k]) => /^(start|dev|serve|watch)|:(start|dev|serve)|^(start|serve|dev):/i.test(k)).slice(0, 10);
+    const deps = Object.keys({ ...p.dependencies, ...p.devDependencies }).filter((d) => /^(@angular\/core|react|next|vue|@nestjs\/core|express|vite|nx|@nx\/|electron|fastify|nodemon)/.test(d)).slice(0, 8);
+    const key = ["start:dev", "dev", "start", "serve"].find((k) => typeof p.scripts?.[k] === "string");
+    const dflt = key ? defaultPort(p.scripts[key]) : null;
+    lines.push(`package.json${dir ? " in " + dir : ""} (${pm}): ${scripts.map(([k, v]) => `${k} = ${v}`).join("; ") || "no start script"}${deps.length ? " | uses " + deps.join(", ") : ""}${dflt ? ` | default port of "${key}" is ${dflt} unless configured otherwise` : ""}`);
+    const flag = key ? Number(/--port[= ](\d{2,5})/.exec(p.scripts[key])?.[1]) || null : null; // the script names its port itself
+    if (key && !start) start = { cmd: key === "start" ? `${pm} start` : `${pm} run ${key}`, dir, port: flag || dflt, fixed: !!flag, script: p.scripts[key] };
+  }
+  for (const rel of find(cwd, /^(angular\.json|project\.json)$/, 3).slice(0, 8)) {
+    const s = read(path.join(cwd, rel)); if (!s) continue;
+    const ports = [...new Set([...s.matchAll(/"port"\s*:\s*(\d{2,5})/g)].map((m) => m[1]))], proxy = [...new Set([...s.matchAll(/"proxyConfig"\s*:\s*"([^"]+)"/g)].map((m) => m[1]))];
+    const hasServe = /"serve"\s*:/.test(s);
+    if (ports.length || proxy.length || hasServe) lines.push(`${rel}: ${hasServe ? "has a serve target" : ""}${ports.length ? "; port " + ports.join(", ") : ""}${proxy.length ? "; proxy " + proxy.join(", ") : ""}`);
+    if (hasServe) serve(...ports);
+  }
+  for (const rel of find(cwd, /^proxy\.conf.*\.(json|js|mjs|cjs)$/i, 4).slice(0, 4)) { const u = locals(read(path.join(cwd, rel))); if (u.length) { lines.push(`${rel}: forwards to ${u.join(", ")}`); portsOf(u).forEach((x) => calls.add(x)); } }
+  // where a front end keeps the address of its API: environment files and the usual config or client modules (only
+  // localhost addresses are taken from them, nothing else of their content)
+  for (const rel of find(cwd, /^environment[\w.-]*\.ts$|^(vite|next|nuxt|webpack)\.config\.(c?js|mjs|ts)$|^(api|config|constants|settings|http|client)\.(c?js|mjs|ts|jsx|tsx)$/i, 6).slice(0, 10)) {
+    const u = locals(read(path.join(cwd, rel))); if (u.length) { lines.push(`${rel}: calls ${u.join(", ")}`); portsOf(u).forEach((x) => calls.add(x)); }
+  }
+  let net = null; // { dir, profile, port } of the .NET project that has launch settings
+  for (const rel of find(cwd, /^launchSettings\.json$/i, 4).slice(0, 4)) {
+    const j = json(path.join(cwd, rel)); const profiles = Object.entries(j?.profiles || {}).filter(([, v]) => v?.commandName === "Project" || v?.applicationUrl).slice(0, 4);
+    if (!profiles.length) continue;
+    lines.push(`${rel}: ${profiles.map(([k, v]) => `profile ${k} → ${locals(v.applicationUrl || "").join(" ") || v.applicationUrl || "?"}`).join("; ")}`);
+    const [name, prof] = profiles.find(([, v]) => v?.commandName === "Project") || profiles[0], ps = portsOf(locals(prof.applicationUrl || ""));
+    serve(...ps);
+    if (!net) net = { dir: path.dirname(path.dirname(rel)) === "." ? "" : path.dirname(path.dirname(rel)), profile: name, port: ps[0] || null };
+  }
+  for (const rel of find(cwd, /^(server|index|app|main)\.(c?js|mjs|ts)$/i, 2).slice(0, 6)) {
+    const src = read(path.join(cwd, rel), 120000) || "";
+    const ports = [...new Set([...src.matchAll(/\.listen\(\s*(\d{2,5})|\bPORT\b[^\n]{0,30}?\|\|\s*(\d{2,5})|\bport\s*[:=]\s*(\d{2,5})/g)].map((m) => m[1] || m[2] || m[3]))].slice(0, 4);
+    if (ports.length) { lines.push(`${rel}: listens on port ${ports.join(", ")}`); serve(...ports); }
+  }
+  for (const rel of find(cwd, /^application(-[\w]+)?\.(properties|ya?ml)$/i, 5).slice(0, 4)) {
+    const m = /server\.port\s*[=:]\s*(\d{2,5})|^\s*port:\s*(\d{2,5})/m.exec(read(path.join(cwd, rel)) || ""); if (m) { lines.push(`${rel}: server port ${m[1] || m[2]}`); serve(m[1] || m[2]); }
+  }
+  const sln = find(cwd, /\.sln$/i, 1), csproj = find(cwd, /\.csproj$/i, 3);
+  if (sln.length || csproj.length) lines.push(`.NET: ${[...sln, ...csproj].slice(0, 8).join(", ")}`);
+  let compose = null;
+  for (const rel of find(cwd, /^(docker-)?compose(\.[\w-]+)?\.ya?ml$/i, 1).slice(0, 2)) {
+    const s = read(path.join(cwd, rel)) || ""; const svc = [...s.matchAll(/^ {2}([\w.-]+):\s*$/gm)].map((m) => m[1]).slice(0, 10), ports = [...new Set([...s.matchAll(/["']?(\d{2,5}):\d{2,5}["']?/g)].map((m) => m[1]))].slice(0, 10);
+    lines.push(`${rel}: services ${svc.join(", ") || "?"}${ports.length ? "; host ports " + ports.join(", ") : ""}`);
+    if (!compose) compose = { port: Number(ports[0]) || null };
+  }
+  const laravel = fs.existsSync(path.join(cwd, "artisan")), django = fs.existsSync(path.join(cwd, "manage.py"));
+  if (laravel) lines.push("Laravel (artisan): php artisan serve");
+  if (django) lines.push("Django (manage.py): python manage.py runserver");
+  const readme = find(cwd, /^readme(\.md)?$/i, 0)[0];
+  if (readme) { const s = read(path.join(cwd, readme), 200000) || ""; const run = s.split(/\r?\n/).filter((l) => /\b(npm (run |start)|pnpm |yarn |nx (serve|run)|ng serve|dotnet (run|watch)|docker[- ]compose|php artisan serve|go run|python .*run)/i.test(l)).slice(0, 8); if (run.length) lines.push(`README run lines: ${run.map((l) => l.trim().slice(0, 140)).join(" | ")}`); }
+  // the most likely start command, for a plan made without the model
+  if (start) { if (!start.fixed && [...serves].length && (/\bnode\b|nodemon|\bng\b|\bnx\b/.test(start.script) || !start.port)) start.port = [...serves][0]; }
+  else if (net) start = { cmd: `dotnet run --project ${net.dir || "."} --launch-profile ${net.profile}`, dir: "", port: net.port };
+  else if (laravel) start = { cmd: "php artisan serve", dir: "", port: 8000 };
+  else if (django) start = { cmd: "python manage.py runserver", dir: "", port: 8000 };
+  else if (compose) start = { cmd: "docker compose up", dir: "", port: compose.port };
+  if (start?.port) serves.add(start.port);
+  for (const x of serves) calls.delete(x); // its own address is not something it depends on
+  return { text: lines.join("\n").slice(0, 3500), serves: [...serves], calls: [...calls], start: start ? { cmd: start.cmd, dir: start.dir, port: start.port || null } : null };
+}
+/** A short, secret-free description of one project folder: how it is started and which local addresses it names. */
+export const digest = (cwd) => facts(cwd).text;
+
+// ---------------------------------------------------------------- asking for a plan
+/** The prompt for one target project; `projects` are { team, name, cwd } of every project on the station. */
+export function planPrompt(target, projects) {
+  const others = projects.filter((p) => p.team !== target.team);
+  const block = (p) => `### ${p.name}\nfolder: ${p.cwd}\n${digest(p.cwd) || "(nothing recognised)"}`;
+  return `You prepare the steps that start a software project on a developer's computer for local development.\n\n` +
+    `The project to start:\n${block(target)}\n\nOther projects on this computer (a step may belong to one of them when the target needs it, for example a backend API it calls):\n${others.map(block).join("\n\n") || "(none)"}\n\n` +
+    `Rules:\n- Start only what the target needs: the target itself, and a dependency only when the target clearly calls it (a local address or proxy target of the target matches a port the other project serves).\n- Dependencies come first, the target last. At most 5 steps.\n- Each command is the normal development start command, run from the given folder (a path relative to that project's folder, "" for its root). Never a build-only, test, install or deploy command. No "cd", no "&&".\n- port: the local port the step listens on when it is ready, if you can tell it from the facts above; otherwise null.\n- Use only commands and ports supported by the facts above. If the target cannot be started from them, return an empty list.\n\n` +
+    `Reply with ONLY a JSON object, no other text:\n{"steps": [{"project": "<project name exactly as above>", "label": "<short label>", "cmd": "<command>", "dir": "<relative folder or empty>", "port": <number or null>}], "note": "<one sentence on what was found>"}\nWrite "label" and "note" in ${langName()}.`;
+}
+const pickJson = (s) => { const a = String(s).indexOf("{"), b = String(s).lastIndexOf("}"); if (a < 0 || b <= a) return null; try { return JSON.parse(String(s).slice(a, b + 1)); } catch { return null; } };
+
+/** The steps of a plan that are well formed and point at real folders of known projects. */
+export function cleanSteps(raw, projects) {
+  const steps = Array.isArray(raw) ? raw : [];
+  return steps.slice(0, 5).map((s) => {
+    const p = projects.find((x) => x.name === s?.project) || projects.find((x) => x.team === s?.team);
+    const cmd = typeof s?.cmd === "string" ? s.cmd.trim() : "", dir = typeof s?.dir === "string" ? s.dir.trim().replace(/^\.\/?/, "").replace(/\\/g, "/") : "";
+    const port = Number.isInteger(s?.port) && s.port > 0 && s.port < 65536 ? s.port : null;
+    if (!p || !cmd || cmd.length > 300 || /[\r\n]/.test(cmd) || dir.split("/").includes("..") || path.isAbsolute(dir)) return null;
+    if (!fs.existsSync(path.join(p.cwd, dir || "."))) return null;
+    return { team: p.team, project: p.name, label: (typeof s.label === "string" && s.label.trim() ? s.label.trim() : cmd).slice(0, 60), cmd, dir, port };
+  }).filter(Boolean);
+}
+
+/** A plan without the model: the target's own start command, and before it every project whose port the target calls. */
+export function guessPlan(target, projects) {
+  const me = facts(target.cwd); if (!me.start) return null;
+  const steps = [];
+  for (const o of projects) {
+    if (o.team === target.team || steps.length >= 4) continue;
+    const f = facts(o.cwd), hit = f.start && me.calls.find((x) => f.serves.includes(x));
+    if (hit) steps.push({ team: o.team, project: o.name, cmd: f.start.cmd, dir: f.start.dir, port: hit });
+  }
+  steps.push({ team: target.team, project: target.name, cmd: me.start.cmd, dir: me.start.dir, port: me.start.port });
+  return cleanSteps(steps, projects);
+}
+
+export async function discover(target, projects) {
+  const made = (steps, note) => ({ steps, note: String(note || "").slice(0, 300), approved: false, madeAt: new Date().toISOString() });
+  const guess = () => { const g = guessPlan(target, projects); return g?.length ? g : null; };
+  if (MOCK) { // the demo never calls a model: the plan comes from the sample projects' own files
+    const g = guess(); if (!g) throw new Error(t("No way to start this project was found. Add the steps yourself."));
+    return made(g, g.length > 1 ? t("Demo: {dep} is started first because {name} calls its port. In a real station a small model reads the project settings once.", { dep: g[0].project, name: target.name }) : t("Demo: found from the project's own start script. In a real station a small model reads the project settings once."));
+  }
+  try {
+    const out = await oneShot(planPrompt(target, projects), { cwd: target.cwd, model: LAUNCH_MODEL, timeout: 120000 });
+    const j = pickJson(out); if (!j) throw new Error(t("The plan could not be read. Try again."));
+    const steps = cleanSteps(j.steps, projects);
+    if (!steps.length) throw new Error(t("No way to start this project was found. Add the steps yourself."));
+    return made(steps, typeof j.note === "string" ? j.note : "");
+  } catch (e) {
+    // the model could not be asked (Claude Code missing, signed out, a bad answer): a guess from the files is better than nothing
+    const g = guess(); if (!g) throw e;
+    return made(g, t("The model could not be asked ({why}). This is a guess from the project files; check it.", { why: String(e.message || e).split("\n")[0].slice(0, 120) }));
+  }
+}
+export function approve(team, steps, projects) {
+  const clean = cleanSteps(steps, projects); if (!clean.length) throw new Error(t("The plan has no valid step."));
+  return savePlan(team, { steps: clean, approved: true, madeAt: new Date().toISOString() });
+}
+export function forget(team) { try { fs.unlinkSync(file(team)); } catch { /* there was none */ } states.delete(team); emit({ type: "launch", team, state: "none" }); }
+
+// ---------------------------------------------------------------- running a plan
+/** Whether something answers on localhost at this port (IPv4 or IPv6, as dev servers bind either). */
+export function portOpen(port, ms = 800) {
+  // never throws and always settles: a hard timer, not only the socket's own timeout (which Windows may not honour while connecting)
+  const one = (host) => new Promise((res) => {
+    let s = null, over = false;
+    const done = (v) => { if (over) return; over = true; clearTimeout(timer); try { s?.destroy(); } catch { /* gone */ } res(v); };
+    const timer = setTimeout(() => done(false), ms);
+    try { s = net.connect({ host, port }); s.once("connect", () => done(true)); s.once("error", () => done(false)); } catch { done(false); }
+  });
+  return Promise.all([one("127.0.0.1"), one("::1")]).then(([a, b]) => a || b, () => false);
+}
+// ---------------------------------------------------------------- where a running step can be opened
+/** One GET on localhost; resolves { status, location, body } or null. Dev certificates are self-signed, so only here, on
+ *  this machine's loopback address, the certificate is not checked. */
+function probe(url, ms = 2500) {
+  return new Promise((res) => {
+    let over = false; const done = (v) => { if (!over) { over = true; clearTimeout(tm); res(v); } };
+    const tm = setTimeout(() => { try { req.destroy(); } catch { /* gone */ } done(null); }, ms);
+    let req;
+    try {
+      const lib = url.startsWith("https:") ? https : http;
+      req = lib.get(url, { rejectUnauthorized: false, headers: { accept: "text/html,*/*" } }, (r) => {
+        let body = ""; r.setEncoding("utf8");
+        r.on("data", (c) => { if (body.length < 20000) body += c; });
+        r.on("end", () => done({ status: r.statusCode, location: r.headers.location || "", body }));
+        r.on("error", () => done(null));
+      });
+      req.on("error", () => done(null));
+    } catch { done(null); }
+  });
+}
+const DOCS = ["/swagger", "/swagger/index.html", "/scalar", "/scalar/v1", "/api-docs", "/docs", "/api/docs", "/redoc"];
+const isDocs = (r) => r && ((r.status >= 200 && r.status < 300 && /swagger-ui|scalar|redoc|openapi/i.test(r.body)) || (r.status >= 300 && r.status < 400 && /swagger|scalar|docs|redoc/i.test(r.location)));
+/** The address of a port (http or https, whichever answers) and, for an API, its documentation page (Swagger, Scalar…). */
+export async function linksFor(port, known) {
+  let base = known ? known.replace(/\/+$/, "").replace("0.0.0.0", "localhost") : null;
+  if (!base) {
+    const [h, s] = await Promise.all([probe(`http://localhost:${port}/`), probe(`https://localhost:${port}/`)]);
+    // an https-only server often answers plain http with a redirect to https, or not at all
+    base = s && !(h && h.status < 300) ? `https://localhost:${port}` : h ? `http://localhost:${port}` : null;
+  }
+  if (!base) return { url: null, docs: null };
+  for (const p of DOCS) {
+    const r = await probe(base + p, 2000);
+    if (isDocs(r)) { const root = await probe(base + "/", 2000); return { url: root && root.status === 404 ? base + p : base + "/", docs: base + p }; } // an API with nothing at "/" opens on its docs
+  }
+  return { url: base + "/", docs: null };
+}
+function findLinks(team, s, st, known) {
+  if (!st.port && !known) return;
+  linksFor(st.port || Number(/:(\d+)/.exec(known)?.[1]), known).then(({ url, docs }) => {
+    if (states.get(team) !== s) return;
+    st.url = url; st.docs = docs; send(team);
+  }).catch(() => { /* no link then */ });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const view = (team) => { const s = states.get(team); return s ? { state: s.state, error: s.error || null, at: s.at, steps: s.steps.map(({ label, project, port, state, run, note, url, docs }) => ({ label, project, port, state, run, note, url, docs })) } : { state: "none" }; };
+const send = (team) => emit({ type: "launch", team, ...view(team) });
+
+export function status(team) {
+  const plan = loadPlan(team), s = states.get(team);
+  return { plan: plan?.approved ? plan : null, ...(s ? view(team) : { state: plan?.approved ? "idle" : "none" }) };
+}
+
+export async function up(team, projects) {
+  const plan = loadPlan(team); if (!plan?.approved) throw new Error(t("Approve a launch plan first."));
+  const cur = states.get(team); if (cur?.state === "starting") return view(team);
+  const s = { state: "starting", steps: plan.steps.map((x) => ({ ...x, state: "waiting", run: null, note: "" })), error: null, at: Date.now() };
+  states.set(team, s); send(team);
+  if (MOCK) { // demo: show the order and the waiting, start nothing (the sample projects have no dependencies installed)
+    (async () => {
+      for (const st of s.steps) { if (states.get(team) !== s) return; st.state = "starting"; st.note = st.port ? t("Waiting for port {port}…", { port: st.port }) : t("Waiting for it to be ready…"); send(team); await sleep(1800); if (states.get(team) !== s) return; st.state = "up"; st.note = t("Demo: not really started"); send(team); }
+      s.state = "up"; s.at = Date.now(); send(team);
+    })();
+    return view(team);
+  }
+  (async () => {
+   try {
+    for (const st of s.steps) {
+      if (states.get(team) !== s) return; // stopped meanwhile
+      const p = projects.find((x) => x.team === st.team); if (!p) { st.state = "failed"; st.note = t("The project is no longer on the station"); break; }
+      if (st.port && await portOpen(st.port)) { st.state = "up"; st.note = t("Already running"); send(team); findLinks(team, s, st); continue; }
+      st.state = "starting"; send(team);
+      let r;
+      try { r = runs.start({ team: st.team, cwd: p.cwd, cmd: st.cmd, dir: st.dir, label: st.label }); }
+      catch (e) { const same = runs.list(st.team).find((x) => x.cmd === st.cmd && x.dir === st.dir && x.status === "running"); if (!same) { st.state = "failed"; st.note = e.message; break; } r = same; }
+      const waitNote = st.port ? t("Waiting for port {port}…", { port: st.port }) : t("Waiting for it to be ready…");
+      st.run = r.id; st.note = waitNote; send(team);
+      const t0 = Date.now(); let ok = false;
+      while (Date.now() - t0 < READY_MS) {
+        if (states.get(team) !== s) return;
+        const now = runs.get(r.id);
+        if (!now || now.status !== "running") { st.note = t("The command ended (exit code {code}) before it was ready", { code: now?.code ?? "?" }); break; }
+        if (st.port ? await portOpen(st.port) : now.url || Date.now() - t0 > 20000) { ok = true; break; }
+        await sleep(1000);
+      }
+      if (!ok) { st.state = "failed"; if (st.note === waitNote) st.note = t("Not ready after {n} minutes", { n: READY_MS / 60000 }); break; }
+      st.state = "up"; st.note = ""; send(team); findLinks(team, s, st, runs.get(r.id)?.url);
+    }
+   } catch (e) {
+    // anything unexpected ends the launch visibly instead of leaving the button on "starting" for ever
+    console.error("[launch]", e?.stack || e);
+    const cur = s.steps.find((x) => x.state === "starting" || x.state === "waiting") || s.steps[0];
+    if (cur) { cur.state = "failed"; cur.note = e?.message || String(e); }
+   }
+    if (states.get(team) !== s) return;
+    const bad = s.steps.find((x) => x.state === "failed");
+    s.state = bad ? "failed" : "up"; s.error = bad ? `${bad.label}: ${bad.note}` : null; s.at = Date.now(); send(team);
+  })();
+  return view(team);
+}
+/** Stops what this launch started (a step that was already running before is left alone). */
+export function down(team) {
+  const s = states.get(team); if (!s) return { state: "idle" };
+  states.delete(team);
+  for (const st of s.steps) if (st.run && st.note !== t("Already running")) { try { runs.stop(st.run); } catch { /* already gone */ } }
+  emit({ type: "launch", team, state: "idle", steps: [] });
+  return { state: "idle" };
+}
+/** Called when a run ends: a launch that was up and lost one of its steps is no longer up. */
+export function onRunEnded(runId) {
+  for (const [team, s] of states) {
+    const st = s.steps.find((x) => x.run === runId); if (!st || s.state !== "up") continue;
+    st.state = "failed"; st.note = t("It stopped"); s.state = "failed"; s.error = `${st.label}: ${st.note}`; send(team);
+  }
+}

@@ -6,10 +6,12 @@ import fs from "node:fs";
 import { t } from "./i18n.js";
 import { dataPath, mkdirPrivate, writePrivate } from "./paths.js";
 import { validatePack, mergePack, emptyProgress } from "../public/study-core.js";
+import { oneShot } from "./runner.js";
+import { tutorPrompt, pickJson, cleanGrade, cleanQuestions, TUTOR_MODEL } from "./study-tutor.js";
 
 const FILE = dataPath("study.json");
-const CAP = { answers: 20000, attempts: 5000, sessions: 5000, notes: 500, drafts: 300 };
-const blank = () => ({ v: 1, content: { topics: [], hints: [], questions: [], tasks: [] }, progress: emptyProgress() });
+const CAP = { answers: 20000, attempts: 5000, sessions: 5000, talks: 5000, notes: 500, drafts: 300 };
+const blank = () => ({ v: 1, content: { topics: [], hints: [], questions: [], tasks: [], problems: [] }, progress: emptyProgress() });
 
 function read() {
   try {
@@ -31,6 +33,8 @@ const clean = {
     ? { id: r.id, questionId: r.questionId, topic: ID.test(r.topic || "") ? r.topic : "", tarih: when(r.tarih), gun: r.gun, dogruMu: r.dogruMu, secilen: text(r.secilen, 300) } : null),
   attempts: (r) => (r && ID.test(r.id || "") && ID.test(r.taskId || "") && when(r.tarih) && DAY.test(r.gun || "") && typeof r.eslesti === "boolean"
     ? { id: r.id, taskId: r.taskId, tarih: when(r.tarih), gun: r.gun, eslesti: r.eslesti, tahmin: text(r.tahmin, 2000), cikti: text(r.cikti, 4000), zamanAsimi: r.zamanAsimi === true } : null),
+  talks: (r) => (r && ID.test(r.id || "") && ID.test(r.topic || "") && Number.isInteger(r.n) && r.n >= 0 && r.n < 100 && when(r.tarih) && DAY.test(r.gun || "") && typeof r.ok === "boolean"
+    ? { id: r.id, topic: r.topic, n: r.n, tarih: when(r.tarih), gun: r.gun, ok: r.ok, mine: text(r.mine, 2000) } : null),
   sessions: (r) => (r && ID.test(r.id || "") && ["isinma", "konu", "karisik"].includes(r.tur) && when(r.tarih) && DAY.test(r.gun || "") && Number.isInteger(r.dogru) && Number.isInteger(r.toplam)
     ? { id: r.id, tur: r.tur, tarih: when(r.tarih), gun: r.gun, dogru: r.dogru, toplam: r.toplam } : null),
 };
@@ -50,9 +54,9 @@ export function studyRouter() {
   // answers, task attempts and finished tests are only ever added (an id the file already has is ignored)
   r.post("/log", (req, res) => {
     const d = read(), b = req.body || {};
-    for (const k of ["answers", "attempts", "sessions"]) {
+    for (const k of ["answers", "attempts", "sessions", "talks"]) {
       if (!Array.isArray(b[k])) continue;
-      const have = new Set(d.progress[k].map((x) => x.id));
+      d.progress[k] ||= []; const have = new Set(d.progress[k].map((x) => x.id));
       for (const raw of b[k].slice(0, 200)) { const x = clean[k](raw); if (x && !have.has(x.id)) { d.progress[k].push(x); have.add(x.id); } }
       if (d.progress[k].length > CAP[k]) d.progress[k] = d.progress[k].slice(-CAP[k]);
     }
@@ -66,7 +70,38 @@ export function studyRouter() {
     if (b.drafts && typeof b.drafts === "object" && !Array.isArray(b.drafts)) {
       d.progress.drafts = Object.fromEntries(Object.entries(b.drafts).filter(([k]) => ID.test(k)).slice(0, CAP.drafts).map(([k, v]) => [k, { code: text(v?.code, 20000), tahmin: text(v?.tahmin, 2000) }]));
     }
+    if (b.lessons && typeof b.lessons === "object" && !Array.isArray(b.lessons)) {
+      d.progress.lessons = Object.fromEntries(Object.entries(b.lessons).filter(([k, v]) => ID.test(k) && v && typeof v === "object").slice(0, 2000)
+        .map(([k, v]) => [k, { step: Number.isInteger(v.step) && v.step >= 0 && v.step <= 99 ? v.step : 0, done: v.done === true, at: when(v.at) || "" }]));
+    }
+    // problems: whether each was solved, how many tries it took, and the code as it was left
+    if (b.problems && typeof b.problems === "object" && !Array.isArray(b.problems)) {
+      d.progress.problems = Object.fromEntries(Object.entries(b.problems).filter(([k, v]) => ID.test(k) && v && typeof v === "object").slice(0, 3000)
+        .map(([k, v]) => [k, { solved: v.solved === true, tries: Number.isInteger(v.tries) && v.tries >= 0 ? Math.min(v.tries, 9999) : 0, at: when(v.at) || "", code: text(v.code, 20000), seen: v.seen === true }]));
+    }
     write(d); res.json({ ok: true });
+  });
+
+  // the tutor: one question to Claude Code, without tools and outside any project (it reads and writes nothing)
+  let busy = 0;
+  r.post("/tutor", async (req, res) => {
+    const b = req.body || {}, kind = String(b.kind || ""), d = read();
+    const prompt = tutorPrompt(kind, d.content, b, b.lang === "tr" ? "tr" : "en");
+    if (!prompt) return res.status(400).json({ error: t("The tutor needs a question, a task or an answer to look at.") });
+    if (busy >= 2) return res.status(429).json({ error: t("The tutor is still answering. Try again in a moment.") });
+    busy++;
+    try {
+      mkdirPrivate(dataPath());
+      const out = await oneShot(prompt, { cwd: dataPath(), model: TUTOR_MODEL, timeout: 150000 });
+      if (kind === "talk") { const g = cleanGrade(pickJson(out)); return g ? res.json({ grade: g }) : res.status(502).json({ error: t("The tutor's answer could not be read. Try again.") }); }
+      if (kind === "more") { const qs = cleanQuestions(pickJson(out), String(b.topic)); return qs.length ? res.json({ questions: qs }) : res.status(502).json({ error: t("The tutor's answer could not be read. Try again.") }); }
+      res.json({ text: out.slice(0, 4000) });
+    } catch (e) {
+      // a sign-in that ran out is the user's to renew; say how instead of passing Claude Code's message on as it is
+      if (/OAuth|authenticat|not logged in|log ?in again|\b401\b|invalid api key/i.test(e.message)) return res.status(401).json({ error: t("Claude Code's sign-in has expired. Open a terminal on this computer, run claude, then type /login and sign in again.") });
+      res.status(502).json({ error: t("The tutor could not answer: {msg}", { msg: e.message }) });
+    }
+    finally { busy--; }
   });
 
   // start the progress over (the content and the notes stay)

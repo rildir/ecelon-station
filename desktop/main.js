@@ -77,7 +77,7 @@ function harden(w) {
   w.setMenuBarVisibility(false);
   w.webContents.on("will-navigate", (e, url) => { if (!sameOrigin(url)) { e.preventDefault(); if (/^https?:\/\//i.test(url)) shell.openExternal(url); } });
   w.webContents.setWindowOpenHandler(({ url }) => {
-    if (sameOrigin(url)) return { action: "allow", overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true, backgroundColor: "#0b0d14", webPreferences } }; // proof report, previews
+    if (sameOrigin(url)) return { action: "allow", overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true, backgroundColor: "#000000", webPreferences } }; // proof report, previews
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: "deny" };
   });
@@ -92,7 +92,7 @@ function harden(w) {
   });
 }
 function createWindow() {
-  win = new BrowserWindow({ width: 1600, height: 960, minWidth: 980, minHeight: 640, title: "Ecelon Station", icon: ICON, backgroundColor: "#0b0d14", autoHideMenuBar: true, show: false, webPreferences });
+  win = new BrowserWindow({ width: 1600, height: 960, minWidth: 980, minHeight: 640, title: "Ecelon Station", icon: ICON, backgroundColor: "#000000", autoHideMenuBar: true, show: false, webPreferences });
   harden(win);
   // Run from a clone, the process is the stock electron.exe: pinned to the taskbar as it is, the pin would start a
   // bare Electron with its logo. Tell Windows what this window is and how to start it again, so the pin carries

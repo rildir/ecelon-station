@@ -3,7 +3,7 @@
 // touching the system clock. The page (study.js) and the server (study.js there) both use this one file.
 //
 // What the module keeps, apart from each other:
-//   content   topics, hints, questions, tasks      (a pack; imported, never worn out by use)
+//   content   topics, hints, questions, tasks, problems   (a pack; imported, never worn out by use)
 //   progress  answers, attempts, sessions, notes   (what the user did; stays on this computer in data/study.json)
 
 export const STATUSES = ["oturdu", "orta", "zayif", "yeni"]; // what a pack may say about a topic; "tekrar" is only ever computed
@@ -94,8 +94,16 @@ export function pickWarmup(content, answers, today, rng = Math.random, n = 5) {
   take(shuffled(content.questions.filter((q) => !seen.has(q.id)), rng)); // what was answered today, if there is nothing else
   return picked;
 }
-export const pickTopicTest = (content, topicId, rng = Math.random, n = 10) => shuffled(content.questions.filter((q) => q.topic === topicId), rng).slice(0, n);
-export const pickMixed = (content, rng = Math.random, n = 10) => shuffled(content.questions, rng).slice(0, n);
+/** Questions in the order a new test should ask them: never answered first, then the ones got wrong last time, then the
+ *  rest by how long ago they were last answered (oldest first). Inside each group the order is random, so taking the test
+ *  again brings the questions not yet seen, and only when every one has been seen does it come round again. */
+export function freshFirst(list, answers = [], rng = Math.random) {
+  const last = lastAnswers(answers), at = (q) => { const a = last.get(q.id); return a ? Date.parse(a.tarih) || 0 : 0; };
+  const rank = (q) => { const a = last.get(q.id); return !a ? 0 : !a.dogruMu ? 1 : 2; };
+  return shuffled(list, rng).map((q, i) => ({ q, i, r: rank(q), t: at(q) })).sort((x, y) => x.r - y.r || (x.r === 2 ? x.t - y.t : 0) || x.i - y.i).map((x) => x.q);
+}
+export const pickTopicTest = (content, topicId, rng = Math.random, n = 10, answers = []) => freshFirst(content.questions.filter((q) => q.topic === topicId), answers, rng).slice(0, n);
+export const pickMixed = (content, rng = Math.random, n = 10, answers = []) => freshFirst(content.questions, answers, rng).slice(0, n);
 
 // ---------------------------------------------------------------- comparing output
 // A line that is an array or an object is compared by its structure: spaces and the way keys are quoted do not matter
@@ -124,11 +132,11 @@ export function compareOutput(actual, expected) {
 
 // ---------------------------------------------------------------- packs: checking and merging
 const ID = /^[A-Za-z0-9_.-]{1,80}$/;
-const LIMITS = { list: 3000, title: 200, code: 6000, ask: 300, option: 300, why: 1500, desc: 4000, line: 400, lines: 100, hint: 600, taskHints: 20 };
+const LIMITS = { list: 3000, title: 200, code: 6000, ask: 300, option: 300, why: 1500, desc: 4000, line: 400, lines: 100, hint: 600, taskHints: 20, group: 60, summary: 900, point: 320, points: 12, example: 3000, mistake: 700, say: 1800, talks: 10, talkAsk: 300, talkAnswer: 1800, steps: 16, stepText: 1200, stepCode: 2500, stepTitle: 120 };
 const isStr = (x) => typeof x === "string";
 const norm = (s) => String(s).replace(/\r\n/g, "\n");
-const emptyContent = () => ({ topics: [], hints: [], questions: [], tasks: [] });
-export const emptyProgress = () => ({ answers: [], attempts: [], sessions: [], notes: [], drafts: {} });
+const emptyContent = () => ({ topics: [], hints: [], questions: [], tasks: [], problems: [] });
+export const emptyProgress = () => ({ answers: [], attempts: [], sessions: [], talks: [], notes: [], drafts: {}, lessons: {}, problems: {} });
 
 /** Check a pack (the parsed JSON) against the schema. `existing` is the content already kept: a question may belong to
  *  a topic that is not in the pack but is already there. Returns { ok: true, pack } with only the known fields, or
@@ -137,7 +145,7 @@ export function validatePack(raw, existing = emptyContent(), t = plain) {
   const errors = [], bad = (where, msg) => { errors.push(where + ": " + msg); };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, errors: [t("The pack must be a JSON object with topics, hints, questions and tasks.")] };
   if (raw.version !== undefined && raw.version !== 1) bad("version", t("must be 1"));
-  const pack = emptyContent(), lists = ["topics", "hints", "questions", "tasks"];
+  const pack = emptyContent(), lists = ["topics", "hints", "questions", "tasks", "problems"];
   for (const k of lists) {
     if (raw[k] === undefined) continue;
     if (!Array.isArray(raw[k])) { bad(k, t("must be a list")); continue; }
@@ -152,11 +160,29 @@ export function validatePack(raw, existing = emptyContent(), t = plain) {
   const ids = (k) => { const seen = new Set(); return (v, i) => { const where = `${k}[${i}]`; if (!v || typeof v !== "object" || Array.isArray(v)) { bad(where, t("must be an object")); return null; } if (!isStr(v.id) || !ID.test(v.id)) { bad(where, t("id must be 1-80 letters, digits, - _ .")); return null; } if (seen.has(v.id)) { bad(`${k} (${v.id})`, t("id appears twice in the pack")); return null; } seen.add(v.id); return `${k}[${i}] (${v.id})`; }; };
   const topicOk = (tp) => ID.test(tp);
 
+  // the page of a topic: a short summary, the points to know, a runnable example, a common mistake, how to say it, and open questions
+  const lessonOf = (where, l) => {
+    if (!l || typeof l !== "object" || Array.isArray(l)) { bad(where, t("lesson must be an object")); return null; }
+    const out = {}, text = (key, max) => { if (l[key] === undefined) return; if (isStr(l[key]) && l[key].trim() && l[key].length <= max) out[key] = key === "example" ? l[key].replace(/\s+$/, "") : norm(l[key]); else bad(where, t("lesson {key} must be a text of at most {n} characters", { key, n: max })); };
+    text("summary", LIMITS.summary); text("example", LIMITS.example); text("mistake", LIMITS.mistake); text("say", LIMITS.say);
+    if (l.points !== undefined) { if (Array.isArray(l.points) && l.points.length <= LIMITS.points && l.points.every((x) => isStr(x) && x.trim() && x.length <= LIMITS.point)) out.points = l.points.map(norm); else bad(where, t("lesson points must be a list of at most {n} short texts", { n: LIMITS.points })); }
+    if (l.talk !== undefined) { if (Array.isArray(l.talk) && l.talk.length <= LIMITS.talks && l.talk.every((x) => x && typeof x === "object" && isStr(x.ask) && x.ask.trim() && x.ask.length <= LIMITS.talkAsk && isStr(x.answer) && x.answer.trim() && x.answer.length <= LIMITS.talkAnswer)) out.talk = l.talk.map((x) => ({ ask: norm(x.ask), answer: norm(x.answer) })); else bad(where, t("lesson talk must be a list of at most {n} items, each with ask and answer", { n: LIMITS.talks })); }
+    // a question right under a step: two to four options, one of them right, and why
+    const okCheck = (c) => c && typeof c === "object" && isStr(c.ask) && c.ask.trim() && c.ask.length <= 300 && Array.isArray(c.options) && c.options.length >= 2 && c.options.length <= 4 && c.options.every((o) => isStr(o) && o.trim() && o.length <= 200)
+      && new Set(c.options.map((o) => o.trim())).size === c.options.length && Number.isInteger(c.correct) && c.correct >= 0 && c.correct < c.options.length && isStr(c.why) && c.why.trim() && c.why.length <= 600;
+    if (l.steps !== undefined) { const okStep = (x) => x && typeof x === "object" && isStr(x.text) && x.text.trim() && x.text.length <= LIMITS.stepText && (x.code === undefined || (isStr(x.code) && x.code.length <= LIMITS.stepCode)) && (x.snippet === undefined || (isStr(x.snippet) && x.snippet.length <= LIMITS.stepCode)) && (x.check === undefined || okCheck(x.check)) && (x.title === undefined || (isStr(x.title) && x.title.length <= LIMITS.stepTitle));
+      if (Array.isArray(l.steps) && l.steps.length <= LIMITS.steps && l.steps.every(okStep)) out.steps = l.steps.map((x) => ({ ...(x.title?.trim() ? { title: norm(x.title).trim() } : {}), text: norm(x.text), ...(x.code?.trim() ? { code: norm(x.code).replace(/\s+$/, "") } : {}), ...(x.snippet?.trim() ? { snippet: norm(x.snippet).replace(/\s+$/, "") } : {}), ...(x.check ? { check: { ask: norm(x.check.ask), options: x.check.options.map((o) => norm(o).trim()), correct: x.check.correct, why: norm(x.check.why) } } : {}) }));
+      else bad(where, t("lesson steps must be a list of at most {n} items, each with a text and an optional code", { n: LIMITS.steps })); }
+    return out;
+  };
   const pid = ids("topics");
   (raw.topics || []).forEach((tp, i) => { const where = pid(tp, i); if (!where) return;
     const title = str(where, tp, "title", LIMITS.title), status = tp.status === "zay\u0131f" ? "zayif" : tp.status;
     if (!STATUSES.includes(status)) bad(where, t("status must be one of {list}", { list: STATUSES.join(", ") }));
-    if (title && STATUSES.includes(status)) pack.topics.push({ id: tp.id, title, status }); });
+    const extra = {};
+    if (tp.group !== undefined) { if (isStr(tp.group) && tp.group.trim() && tp.group.length <= LIMITS.group) extra.group = norm(tp.group); else bad(where, t("group must be a short text")); }
+    if (tp.lesson !== undefined) { const l = lessonOf(where, tp.lesson); if (l) extra.lesson = l; }
+    if (title && STATUSES.includes(status)) pack.topics.push({ id: tp.id, title, status, ...extra }); });
   const known = new Set([...existing.topics.map((x) => x.id), ...(raw.topics || []).filter((x) => x && isStr(x.id)).map((x) => x.id)]);
 
   (raw.hints || []).forEach((h, i) => { const where = `hints[${i}]`; if (!h || typeof h !== "object" || Array.isArray(h)) return bad(where, t("must be an object"));
@@ -182,6 +208,20 @@ export function validatePack(raw, existing = emptyContent(), t = plain) {
     const expectedOutput = list("expectedOutput", LIMITS.lines), hints = list("hints", LIMITS.taskHints);
     if (errors.length === before) pack.tasks.push({ id: k.id, topic: k.topic, title, description, expectedOutput, hints }); });
 
+  // problems: a function to write, judged by test calls (each a JavaScript expression and the value it must give)
+  const prid = ids("problems");
+  (raw.problems || []).forEach((k, i) => { const where = prid(k, i); if (!where) return; const before = errors.length;
+    const title = str(where, k, "title", LIMITS.title), description = str(where, k, "description", LIMITS.desc);
+    if (![1, 2, 3].includes(k.level)) bad(where, t("level must be 1 (easy), 2 (medium) or 3 (hard)"));
+    if (!isStr(k.starter) || !k.starter.trim() || k.starter.length > 4000) bad(where, t("starter must be the code the editor opens with"));
+    const okTest = (x) => x && typeof x === "object" && isStr(x.call) && x.call.trim() && x.call.length <= 600 && x.expect !== undefined && JSON.stringify(x.expect).length <= 3000;
+    if (!Array.isArray(k.tests) || !k.tests.length || k.tests.length > 40 || !k.tests.every(okTest)) bad(where, t("tests must be a list of 1 to 40 items, each with call and expect"));
+    const hints = k.hints === undefined ? [] : k.hints;
+    if (!Array.isArray(hints) || hints.length > LIMITS.taskHints || !hints.every((h) => isStr(h) && h.trim())) bad(where, t("hints must be a list of texts"));
+    for (const [key, max] of [["solution", 8000], ["explain", 4000], ["tag", 40]]) if (k[key] !== undefined && (!isStr(k[key]) || !k[key].trim() || k[key].length > max)) bad(where, t("{key} must be a text of at most {n} characters", { key, n: max }));
+    if (errors.length === before) pack.problems.push({ id: k.id, title, level: k.level, ...(k.tag ? { tag: norm(k.tag).trim() } : {}), description, starter: norm(k.starter).replace(/\s+$/, ""), tests: k.tests.map((x) => ({ call: norm(x.call).trim(), expect: x.expect })),
+      hints: hints.map(norm), ...(k.solution ? { solution: norm(k.solution).replace(/\s+$/, "") } : {}), ...(k.explain ? { explain: norm(k.explain) } : {}) }); });
+
   if (!errors.length && !lists.some((k) => pack[k].length)) errors.push(t("The pack is empty: it has no topics, hints, questions or tasks."));
   return errors.length ? { ok: false, errors } : { ok: true, pack };
 }
@@ -189,8 +229,8 @@ export function validatePack(raw, existing = emptyContent(), t = plain) {
 /** Put a checked pack into the content: the same id is overwritten, a new id is added. Hints have no id: the same
  *  topic and text is the same hint. Returns the new content and what happened; the old content is not touched. */
 export function mergePack(content, pack) {
-  const next = { topics: [...content.topics], hints: [...content.hints], questions: [...content.questions], tasks: [...content.tasks] }, report = {};
-  for (const k of ["topics", "questions", "tasks"]) {
+  const next = { topics: [...content.topics], hints: [...content.hints], questions: [...content.questions], tasks: [...content.tasks], problems: [...(content.problems || [])] }, report = {};
+  for (const k of ["topics", "questions", "tasks", "problems"]) {
     const r = report[k] = { added: 0, updated: 0 };
     for (const item of pack[k]) { const i = next[k].findIndex((x) => x.id === item.id); if (i < 0) { next[k].push(item); r.added++; } else { if (JSON.stringify(next[k][i]) !== JSON.stringify(item)) r.updated++; next[k][i] = item; } }
   }
@@ -216,14 +256,75 @@ export function quizText({ title, day, rows, total }, t = plain, loc = "en-US") 
 export const SCHEMA_TEXT = `Write a JSON content pack for a JavaScript study tool. Output only the JSON.
 {
   "version": 1,
-  "topics":    [ { "id": "closure", "title": "Closure", "status": "yeni" } ],
+  "topics":    [ { "id": "closure", "title": "Closure", "status": "yeni", "group": "Scope and functions",
+                   "lesson": { "summary": "3-5 sentences", "points": ["a thing to know"], "example": "console.log(1);",
+                               "steps": [ { "title": "optional", "text": "one idea, built on the step before", "code": "optional code that runs here",
+                                            "snippet": "optional code that is only shown (HTML, TypeScript, more than one file)" } ],
+                               "mistake": "the common mistake", "say": "how to say it aloud in one paragraph",
+                               "talk": [ { "ask": "Explain closures.", "answer": "a model answer" } ] } } ],
   "hints":     [ { "topic": "closure", "text": "one short memorable sentence" } ],
   "questions": [ { "id": "q-closure-2", "topic": "closure", "code": "console.log(1);", "ask": "What does the console print?",
                    "options": ["A", "B", "C", "D"], "correct": 2, "why": "one or two sentences" } ],
+  "problems":  [ { "id": "p-two-sum", "title": "Two sum", "level": 1, "tag": "arrays", "description": "what to write",
+                   "starter": "function twoSum(nums, target) {\\n  \\n}", "tests": [ { "call": "twoSum([2, 7, 11], 9)", "expect": [0, 1] } ],
+                   "hints": ["first hint"], "solution": "a reference solution", "explain": "why it works" } ],
   "tasks":     [ { "id": "y4", "topic": "closure", "title": "Y4: a counter", "description": "what to write",
                    "expectedOutput": ["1", "[1,2]"], "hints": ["first hint", "second hint"] } ]
 }
 Rules: every id is unique and uses only letters, digits, - _ . ; status is one of oturdu, orta, zayif, yeni (a new topic is "yeni");
 a question has 2 to 6 different options and "correct" is the 0-based index of the right one; a hint's topic is a topic id or "genel";
 expectedOutput is what console.log prints, one item per line (arrays and objects are compared by structure, spaces do not matter).
-Any list may be left out. The same id as before overwrites that item.`;
+The topics' order is the learning order; group, lesson and every part of a lesson are optional. Any list may be left out. The same id as before overwrites that item.`;
+
+/** Whether a topic's lesson counts as read: marked done, or it has no lesson to read. */
+export const lessonDone = (topic, lessons) => !topic.lesson || lessons?.[topic.id]?.done === true;
+
+/**
+ * What to do next, in order of use: today's warm-up when something is due, the lesson that was left half-way, the first
+ * lesson not read yet, a weak topic, a mixed quiz. Returns every step that applies; the first one is the suggestion.
+ * `p` is the progress, `states` what allStates returned, `today` a day key.
+ */
+export function nextSteps(content, p, states, today) {
+  const out = [], lessons = p.lessons || {}, topics = content.topics, has = (id) => content.questions.some((q) => q.topic === id);
+  const answeredToday = p.answers.some((a) => a.gun === today), warmDone = p.sessions.some((x) => x.tur === "isinma" && x.gun === today);
+  // a topic counts as due or weak here only once it has been asked: the starting status of a pack is not the learner's own result
+  const asked = (x, status) => states[x.id]?.status === status && states[x.id].total > 0 && has(x.id);
+  const due = topics.filter((x) => asked(x, "tekrar")), weak = topics.filter((x) => asked(x, "zayif"));
+  const lastWrong = new Map(); for (const a of p.answers) lastWrong.set(a.questionId, a);
+  const wrongBefore = [...lastWrong.values()].filter((a) => !a.dogruMu && a.gun < today).length;
+  if (!warmDone && p.answers.length && (wrongBefore || due.length || weak.length)) out.push({ kind: "warmup", wrong: wrongBefore, due: due.length, weak: weak.length });
+  const open = topics.filter((x) => x.lesson && lessons[x.id] && !lessons[x.id].done && lessons[x.id].step > 0).sort((a, b) => String(lessons[b.id].at || "").localeCompare(String(lessons[a.id].at || "")));
+  if (open[0]) out.push({ kind: "lesson", id: open[0].id, step: lessons[open[0].id].step, resume: true });
+  const fresh = topics.find((x) => x.lesson && !lessons[x.id]?.done && x.id !== open[0]?.id);
+  if (fresh) out.push({ kind: "lesson", id: fresh.id, step: 0, resume: false });
+  if (weak[0]) out.push({ kind: "topic", id: weak[0].id });
+  if (content.questions.length && (warmDone || !out.some((x) => x.kind === "warmup"))) out.push({ kind: answeredToday ? "mixed" : "warmup-plain" });
+  return out;
+}
+
+// ---------------------------------------------------------------- problems: running the tests of one
+export const TEST_MARK = "__ECELON_TESTS__";
+/**
+ * The code that is run for a problem: the learner's code, then every test call in turn. Each call is awaited (so a
+ * function may return a promise) and its value, or the error it threw, is printed on one marked line as JSON.
+ */
+export function problemProgram(code, tests) {
+  const calls = tests.map((x) => `async () => (${x.call})`).join(",\n  ");
+  return `${code}\n;(async () => {\n  const __tests = [\n  ${calls}\n  ];\n  const __out = [];\n  for (const __f of __tests) {\n    try { const __v = await __f(); __out.push({ v: __v === undefined ? "undefined" : JSON.stringify(__v) }); }\n    catch (__e) { __out.push({ e: String((__e && __e.name ? __e.name + ": " : "") + (__e && __e.message !== undefined ? __e.message : __e)) }); }\n  }\n  console.log(${JSON.stringify(TEST_MARK)} + JSON.stringify(__out));\n})();`;
+}
+/**
+ * The verdict on a run. `lines` are the console lines ({ kind, text }); the marked one holds the test results, the
+ * rest is the learner's own output. A test passes when its value, as JSON, equals the expected value's JSON.
+ */
+export function judgeProblem(tests, lines, timedOut = false) {
+  const mark = lines.find((l) => (l.kind === "log" || l.kind === "info") && l.text.startsWith(TEST_MARK));
+  const own = lines.filter((l) => l !== mark && l.kind !== "result");
+  let got = null; try { got = mark ? JSON.parse(mark.text.slice(TEST_MARK.length)) : null; } catch { got = null; }
+  const rows = tests.map((x, i) => {
+    const want = JSON.stringify(x.expect), r = Array.isArray(got) ? got[i] : null;
+    if (!r) return { call: x.call, want, got: null, error: null, ok: false };
+    return r.e !== undefined ? { call: x.call, want, got: null, error: String(r.e), ok: false } : { call: x.call, want, got: String(r.v), error: null, ok: r.v === want };
+  });
+  const errors = own.filter((l) => l.kind === "error" || l.kind === "throw").map((l) => l.text);
+  return { rows, passed: rows.filter((r) => r.ok).length, total: rows.length, ok: rows.length > 0 && rows.every((r) => r.ok), ran: Array.isArray(got), timedOut, errors, output: own.filter((l) => l.kind === "log" || l.kind === "info" || l.kind === "warn").map((l) => l.text) };
+}

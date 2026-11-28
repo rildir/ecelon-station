@@ -8,7 +8,7 @@
 <link rel="icon" href="/icon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#1b2038">
+<meta name="theme-color" content="#000000">
 <!-- fonts served locally (no internet needed) -->
 <link rel="stylesheet" href="/vendor/fonts/bricolage-grotesque/500.css">
 <link rel="stylesheet" href="/vendor/fonts/bricolage-grotesque/700.css">
@@ -154,6 +154,8 @@
           <p id="a-path" class="path"></p>
           <div class="a-row"><span id="a-status" class="status st-idle" data-i18n>Idle</span><button type="button" id="linked-docs" class="a-linked" hidden></button></div>
         </div>
+        <button type="button" id="launch" class="launch ln-idle" aria-haspopup="true" aria-expanded="false" hidden><i class="ln-dot" aria-hidden="true"></i><span class="ln-txt" data-i18n>Start up</span><span class="ln-more" aria-hidden="true">▾</span></button>
+        <div id="launch-menu" class="ln-menu" role="menu" hidden></div>
         <div class="head-actions menu">
           <button id="btn-toproject" class="hbtn" type="button" data-i18n-attr="title" title="Give this chat a project folder: it becomes a project with a full team (developer, analyst, tester, reviewer)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg><span data-i18n>Turn into a project</span></button>
           <button id="btn-focus" class="hbtn fx-btn" aria-pressed="false" data-i18n-attr="title,aria-label" title="Focus mode: chat in full width, projects on the left, 3D scene off (Ctrl+\)" aria-label="Focus mode">
@@ -376,18 +378,26 @@
 <section id="study" class="overlay" hidden data-i18n-attr="aria-label" aria-label="JS Study">
   <header class="lib-top">
     <button type="button" class="icon-btn" data-act="close" data-i18n-attr="title,aria-label" title="Back (Esc)" aria-label="Back (Esc)"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></button>
-    <div class="lib-title"><h2 data-i18n>JS Study</h2><span data-i18n>Questions, coding tasks and notes. Your progress stays on this computer.</span></div>
+    <div class="lib-title"></div><!-- no visible name: the room should not announce itself to someone looking at the screen -->
     <div id="st-tabs" class="tk-filter" role="tablist">
-      <button type="button" role="tab" class="chip on" data-tab="map" aria-selected="true" data-i18n>Topics</button>
-      <button type="button" role="tab" class="chip" data-tab="quiz" aria-selected="false" data-i18n>Quiz</button>
-      <button type="button" role="tab" class="chip" data-tab="code" aria-selected="false" data-i18n>Code</button>
-      <button type="button" role="tab" class="chip" data-tab="tips" aria-selected="false" data-i18n>Cheat sheet</button>
+      <button type="button" role="tab" class="chip on" data-tab="today" aria-selected="true" data-i18n>Today</button>
+      <button type="button" role="tab" class="chip" data-tab="learn" aria-selected="false" data-i18n>Learn</button>
+      <button type="button" role="tab" class="chip" data-tab="practice" aria-selected="false" data-i18n>Practice</button>
+      <button type="button" role="tab" class="chip" data-tab="tips" aria-selected="false" data-i18n>Notes</button>
     </div>
     <div class="rq-actions"><button type="button" id="st-import" class="btn ghost sm" data-i18n>Import pack</button></div>
   </header>
   <div class="st-body">
-    <div id="st-map" class="st-pane"></div>
+    <div id="st-sub" class="st-sub" role="tablist" hidden>
+      <button type="button" role="tab" data-tab="quiz" aria-selected="true" data-i18n>Quiz</button>
+      <button type="button" role="tab" data-tab="say" aria-selected="false" data-i18n>Say it</button>
+      <button type="button" role="tab" data-tab="code" aria-selected="false" data-i18n>Code</button>
+      <button type="button" role="tab" data-tab="prob" aria-selected="false" data-i18n>Problem set</button>
+    </div>
+    <div id="st-today" class="st-pane"></div>
+    <div id="st-learn" class="st-pane" hidden></div>
     <div id="st-quiz" class="st-pane" hidden></div>
+    <div id="st-say" class="st-pane" hidden></div>
     <div id="st-code" class="st-pane st-codepane" hidden>
       <aside id="st-tasklist" class="st-tasks"></aside>
       <div id="st-work" class="st-work">
@@ -398,10 +408,15 @@
         <div class="st-run">
           <label for="stc-guess" data-i18n>My guess</label>
           <textarea id="stc-guess" rows="3" spellcheck="false" data-i18n-attr="placeholder" placeholder="What will the console print? One line for each console.log."></textarea>
-          <div class="st-run-b"><button type="button" id="stc-run" class="btn primary sm" disabled data-i18n>Run</button><span id="stc-runhint"></span><button type="button" id="stc-copy" class="btn ghost sm" hidden data-i18n>Copy result</button></div>
+          <div class="st-run-b"><button type="button" id="stc-run" class="btn primary sm" disabled data-i18n>Run</button><span id="stc-runhint"></span><button type="button" id="stc-copy" class="btn ghost sm" hidden data-i18n>Copy result</button><button type="button" id="stc-tutor" class="btn ghost sm" hidden data-i18n>Ask the tutor about my code</button></div>
         </div>
         <div id="stc-result" class="st-result" hidden></div>
+        <div id="stc-tutorout" hidden></div>
       </div>
+    </div>
+    <div id="st-prob" class="st-pane st-codepane" hidden>
+      <aside id="sp-list" class="st-tasks"></aside>
+      <div id="sp-work" class="st-work"></div>
     </div>
     <div id="st-tips" class="st-pane" hidden></div>
   </div>
@@ -451,13 +466,17 @@
     <label class="lib-search"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" style="fill:none;stroke:currentColor;stroke-width:2"/><path d="m10.5 10.5 3 3"/></svg>
       <input id="rq-q" type="search" data-i18n-attr="placeholder,aria-label" placeholder="Search requirements, codes, evidence or notes" autocomplete="off" aria-label="Search requirements"></label>
     <div class="rq-actions">
+      <div class="rq-steps">
       <span id="rq-analyst" class="rq-analyst"></span>
+      <div class="rq-flow" role="group" data-i18n-attr="aria-label" aria-label="The steps, in order">
       <button type="button" class="btn ghost sm" data-act="extract" data-i18n-attr="title" title="The analyst extracts the requirements list from the linked documents (updates it if one exists)" data-i18n>Extract from document</button>
       <button type="button" class="btn ghost sm" data-act="compare" data-i18n-attr="title" title="The analyst compares every item with the code and updates its work status" data-i18n>Compare with code</button>
       <button type="button" class="btn ghost sm" data-act="verify" data-i18n-attr="title" title="The tester actually tries the unverified items and verifies them with evidence" data-i18n>Verify with the tester</button>
       <button type="button" class="btn ghost sm" data-act="review" data-i18n-attr="title" title="The reviewer reads the document independently of the list and finds requirements missing from it" data-i18n>Second opinion</button>
-      <button type="button" class="btn ghost sm" data-act="add" data-i18n>+ Item</button>
-      <button type="button" class="btn ghost sm" data-act="export" data-i18n-attr="title" title="Download as a Markdown report" data-i18n>Export</button>
+      </div>
+      <button type="button" class="btn ghost sm quiet" data-act="add" data-i18n>+ Item</button>
+      <button type="button" class="btn ghost sm quiet" data-act="export" data-i18n-attr="title" title="Download as a Markdown report" data-i18n>Export</button>
+      </div>
       <button type="button" class="btn primary sm" data-act="proof" data-i18n-attr="title" title="One page for a manager or a customer: what the document says, where it is in the code, how it was verified and by whom. Opens in a new tab; print it or save it." data-i18n>Proof report</button>
     </div>
   </header>

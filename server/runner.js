@@ -103,6 +103,26 @@ export function killTree(child) {
   else { try { child.kill("SIGINT"); } catch {} setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 8000).unref(); }
 }
 
+// The user can ask for a second model to be used when the chosen one is busy or unavailable (Settings in the usage
+// panel; data/prefs.json "fallback"). It is Sonnet 5.5 unless that is already the model in use.
+export const FALLBACK_MODEL = "claude-sonnet-5-5";
+export function fallbackFor(model) {
+  try { if (JSON.parse(fs.readFileSync(dataPath("prefs.json"), "utf8")).fallback !== true) return null; } catch { return null; }
+  return model && model !== FALLBACK_MODEL ? FALLBACK_MODEL : null;
+}
+
+/** `claude auth status --json`: who is signed in. Null when Claude Code is missing or does not answer. */
+export function authStatus(timeout = 8000) {
+  return new Promise((resolve) => {
+    const sp = spawnSpec(); if (!sp) return resolve(null);
+    const child = spawn(sp.cmd, [...sp.pre, "auth", "status", "--json"], { shell: sp.shell, env: childEnv(), stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    let out = ""; const timer = setTimeout(() => { killTree(child); resolve(null); }, timeout);
+    child.stdout.on("data", (d) => { out += d; });
+    child.on("error", () => { clearTimeout(timer); resolve(null); });
+    child.on("close", () => { clearTimeout(timer); try { resolve(JSON.parse(out)); } catch { resolve(null); } });
+  });
+}
+
 const PERMISSION_MODE = process.env.CLAUDE_PERMISSION_MODE || "acceptEdits";
 
 export function buildArgs(agent) {
@@ -115,6 +135,7 @@ export function buildArgs(agent) {
     "--effort", agent.effort,
     "--permission-mode", agent.permission || PERMISSION_MODE,
   ];
+  const fb = fallbackFor(agent.model); if (fb) args.push("--fallback-model", fb);
   // Images the user attaches are saved in this folder; access is granted so the agent can read them.
   const up = uploadsDir(agent.id);
   // document library: so the agent can read the reference documents
@@ -197,6 +218,10 @@ export function uploadsDir(agentId) {
 export function summarizeToolInput(name, input = {}) {
   const role = input.role ?? input.rol, task = input.task ?? input.gorev;
   if (role && task) return `${role}: ${String(task).slice(0, 100)}`;
+  if (name.startsWith("mcp__team__")) { // the station's own tools: which item, what happened to it
+    const bits = [input.code || input.id, input.status || input.result, input.title, input.project, input.reason, input.filter].filter((x) => typeof x === "string" && x);
+    if (bits.length) return bits.join(" · ").slice(0, 120);
+  }
   const pick = input.file_path || input.path || input.command || input.pattern || input.query || input.url || input.description || "";
   const s = typeof pick === "string" ? pick : JSON.stringify(pick);
   return s.length > 120 ? s.slice(0, 117) + "..." : s;
@@ -382,12 +407,14 @@ export function runClaude(agent, prompt, emit) {
 
 // One-off short answer without tools (e.g. commit message suggestion). Opens no session, writes nothing to the chat.
 export function oneShot(prompt, { cwd, model = "claude-haiku-5-5", timeout = 90000 } = {}) {
-  return new Promise((resolve, reject) => {
+  // no tools at all: an answer is text only. (Naming tools to deny breaks as Claude Code renames and checks them:
+  // newer versions refuse a deny list that names a tool they do not have, or that turns off the shell tool.)
+  const quiet = ["--tools", "", "--strict-mcp-config", "--no-chrome", "--no-session-persistence"];
+  const once = (extra) => new Promise((resolve, reject) => {
     const sp = spawnSpec(); if (!sp) return reject(new Error(t("Claude Code not found")));
     const needShell = sp.shell;
-    const quote = (a) => (/[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
-    const args = ["-p", "--model", model, "--output-format", "text", "--max-turns", "1",
-      "--disallowedTools", "Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task", "TodoWrite"];
+    const quote = (a) => (a === "" ? '""' : /[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
+    const args = ["-p", "--model", model, "--output-format", "text", "--max-turns", "1", ...extra];
     const child = spawn(sp.cmd, [...sp.pre, ...(needShell ? args.map(quote) : args)], { cwd, shell: needShell, env: childEnv(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let out = "", err = "";
     const timer = setTimeout(() => { killTree(child); reject(new Error(t("Timed out"))); }, timeout);
@@ -396,4 +423,6 @@ export function oneShot(prompt, { cwd, model = "claude-haiku-5-5", timeout = 900
     child.on("close", (code) => { clearTimeout(timer); code === 0 && out.trim() ? resolve(out.trim()) : reject(new Error((err || out || t("exit code {code}", { code })).trim().slice(0, 300))); });
     child.stdin.on("error", () => {}); child.stdin.end(prompt);
   });
+  // an older Claude Code that does not know one of these switches: ask once more without them
+  return once(quiet).catch((e) => (/unknown option|unrecognized|unexpected argument/i.test(e.message) ? once([]) : Promise.reject(e)));
 }

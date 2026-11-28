@@ -19,11 +19,11 @@ export function loadMonaco() {
       window.require(["vs/editor/editor.main"], () => {
         const m = window.monaco;
         m.editor.defineTheme("ecelon", { base: "vs-dark", inherit: true, rules: [
-          { token: "comment", foreground: "7a7fa6", fontStyle: "italic" }, { token: "keyword", foreground: "f6a23a" }, { token: "string", foreground: "8ff0bd" },
-          { token: "number", foreground: "ffcf91" }, { token: "type", foreground: "5fd0ff" }, { token: "delimiter", foreground: "c9c4e6" } ],
-          colors: { "editor.background": "#141829", "editor.lineHighlightBackground": "#1b2038", "editorLineNumber.foreground": "#4f5680", "editorLineNumber.activeForeground": "#c9c4e6",
-            "editor.selectionBackground": "#3a4270", "editorCursor.foreground": "#f6a23a", "editorIndentGuide.background1": "#232948", "editorWidget.background": "#1b2038",
-            "editorGutter.background": "#141829", "minimap.background": "#141829", "scrollbarSlider.background": "#3a427066", "diffEditor.insertedTextBackground": "#2fd27f22", "diffEditor.removedTextBackground": "#ff4d6a26" } });
+          { token: "comment", foreground: "8c8981", fontStyle: "italic" }, { token: "keyword", foreground: "f6a23a" }, { token: "string", foreground: "8ff0bd" },
+          { token: "number", foreground: "ffcf91" }, { token: "type", foreground: "c4a7f5" }, { token: "delimiter", foreground: "bdbab2" } ],
+          colors: { "editor.background": "#050505", "editor.lineHighlightBackground": "#111111", "editorLineNumber.foreground": "#5e5c57", "editorLineNumber.activeForeground": "#bdbab2",
+            "editor.selectionBackground": "#3a3835", "editorCursor.foreground": "#f6a23a", "editorIndentGuide.background1": "#232948", "editorWidget.background": "#1c1c1b",
+            "editorGutter.background": "#050505", "minimap.background": "#050505", "scrollbarSlider.background": "#4a474266", "diffEditor.insertedTextBackground": "#2fd27f22", "diffEditor.removedTextBackground": "#ff4d6a26" } });
         ok(m);
       }, no);
     };
@@ -164,7 +164,7 @@ export function createEditor(ctx) {
     $("#ed-other").hidden = !!(tb && tb.kind === "text");
     if (!$("#ed-diff").hidden) dropDiff();
     $("#ed-diff").hidden = true;
-    if (!tb) { $("#ed-other").innerHTML = `<div class="lv-none"><b>${t("Open a file")}</b><p>${t("Select one on the left or type its name with <kbd>Ctrl</kbd>+<kbd>P</kbd>. To search the project, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>.")}</p></div>`; }
+    if (!tb) { $("#ed-other").innerHTML = `<div class="lv-none"><div class="le-art"><svg viewBox="0 0 16 16"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9 3 7 13"/></svg></div><b>${t("Open a file")}</b><p>${t("Select one on the left or type its name with <kbd>Ctrl</kbd>+<kbd>P</kbd>. To search the project, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>.")}</p></div>`; }
     else if (tb.kind === "text") { ed.setModel(tb.model); if (tb.view) ed.restoreViewState(tb.view); setTimeout(() => ed.focus(), 0); }
     else if (tb.kind === "image") $("#ed-other").innerHTML = `<div class="ed-img"><img src="/api/agents/${P.agent.id}/fs/raw?path=${encodeURIComponent(tb.path)}&t=${tb.mtime}" alt=""><small>${esc(tb.path)} · ${Math.round(tb.size / 1024)} KB</small></div>`;
     else $("#ed-other").innerHTML = `<div class="lv-none"><b>${tb.kind === "big" ? t("File too large") : t("Binary file")}</b><p>${t("{path} ({kb} KB) cannot be opened here.", { path: esc(tb.path), kb: Math.round(tb.size / 1024) })}</p><button type="button" class="btn ghost sm" data-ed="reveal">${t("Show in file manager")}</button></div>`;

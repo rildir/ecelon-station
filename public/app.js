@@ -8,6 +8,7 @@ import { createStudy } from "./study.js";
 import { createGit } from "./gitui.js";
 import { createEditor } from "./editor.js";
 import { createRuns } from "./runui.js";
+import { createLaunch } from "./launchui.js";
 import { t, LANGS, currentLang, locale } from "./i18n.js";
 
 // ================= helpers =================
@@ -265,6 +266,9 @@ $("#btn-practice").onclick = () => practiceUI.open();
 // JS Study: questions, coding tasks and notes; its content and progress are kept in data/study.json
 const studyUI = createStudy({ api, toast, confirmBox, onOpen: () => { station.pause(true); closePops(); }, onClose: () => { station.pause(false); } });
 $("#btn-study").onclick = () => studyUI.open();
+// JS Study is parked while the station itself is being readied for release: its button stays out of the top bar unless
+// it is switched on for this browser (open the page once with ?study=1; ?study=0 switches it off again).
+{ const q = new URLSearchParams(location.search).get("study"); if (q === "1" || q === "0") lsSet("ecelon.study", q); $("#btn-study").hidden = lsGet("ecelon.study", "0") !== "1"; }
 let tasksSeq = 0;
 async function renderTasksBadge(a = current()) {
   if (!a) return; const seq = ++tasksSeq;
@@ -339,11 +343,21 @@ const runUI = createRuns({
 async function refreshRunCounts() { try { runCounts = await api("/api/runs/summary"); } catch {} renderRunBadge(); }
 function renderRunBadge(a = current()) { const n = a ? runCounts[teamKey(a)] || 0 : 0; $("#run-badge").textContent = n ? `● ${n}` : ""; $("#btn-run").classList.toggle("live", !!n); }
 function openRun(a = current(), opts) { if (a) runUI.open(leadOf(a), opts); }
+// "Start up" button at the top right: the project and what it needs, with one click (public/launchui.js)
+const launchUI = createLaunch({
+  api, toast, openRun: (a) => openRun(a),
+  projects: () => { const m = new Map(); for (const x of agents) if (!x.solo && !x.wt && !m.has(teamKey(x))) { const l = leadOf(x); m.set(teamKey(x), { team: teamKey(x), name: l.name }); } return [...m.values()]; },
+});
 $("#btn-run").onclick = () => openRun();
 refreshRunCounts();
 $("#btn-code").onclick = () => openCode();
 let gitT; const gitSoon = () => { clearTimeout(gitT); gitT = setTimeout(refreshGitSummary, 1200); };
-setInterval(refreshGitSummary, 45000);
+// Background polls rest while the window is hidden or minimized (a git status over every project every 45 s is real work
+// for the machine) and run once on return if one was skipped. Events from the server still update the page meanwhile.
+const polls = [];
+function poll(fn, ms) { const p = { fn, missed: false }; polls.push(p); setInterval(() => { if (document.hidden) p.missed = true; else fn(); }, ms); }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) for (const p of polls) if (p.missed) { p.missed = false; p.fn(); } });
+poll(refreshGitSummary, 45000);
 
 // ================= the office shows the real state =================
 // papers on the lead's desk = uncommitted changes, boxes by the door = unpushed commits, the plant = health
@@ -359,7 +373,7 @@ function wearOf(tk) {
   return Math.min(1, (ov.tasks?.old || 0) * 0.12 + (r.stale || 0) * 0.06 + (r.mismatches || 0) * 0.05 + (gs.changed > 150 ? 0.35 : gs.changed > 60 ? 0.15 : 0));
 }
 let ovT; const overviewSoon = () => { clearTimeout(ovT); ovT = setTimeout(refreshOverview, 800); };
-setInterval(refreshOverview, 60000);
+poll(refreshOverview, 60000);
 const leadOfTeam = (tk) => agents.find((x) => teamKey(x) === tk && roleOf(x) === "dev") || agents.find((x) => teamKey(x) === tk);
 function healthOf(tk) {
   const r = overview[tk]?.reqs, team = agents.filter((x) => teamKey(x) === tk);
@@ -375,7 +389,7 @@ async function refreshPayroll() {
   await Promise.all(teamOrder().map(async (tk) => { try { payroll.set(tk, await api(`/api/payroll/${encodeURIComponent(tk)}?since=${weekStart()}`)); } catch {} }));
   pushOffice();
 }
-setInterval(refreshPayroll, 120000);
+poll(refreshPayroll, 120000);
 function payrollBoard(tk) {
   const p = payroll.get(tk); if (!p) return null;
   const rows = p.members.filter((m) => m.costUsd > 0).sort((a, b) => b.costUsd - a.costUsd).map((m) => ({ name: meta.roles?.[m.role]?.label || m.name, usd: m.costUsd, money: money(m.costUsd), color: ROLE_COLOR[m.role] }));
@@ -798,6 +812,7 @@ function applyView() {
   document.body.classList.toggle("pro", proView); $("#board").hidden = !proView; sfx.muted = proView; station.pauseSync();
   const b = $("#btn-view"); b.setAttribute("aria-pressed", String(proView)); b.title = proView ? t("Switch to the office view") : t("Switch to the professional view"); b.setAttribute("aria-label", b.title);
   if (proView) { if (live) stopLive(); renderBoardNow(); }
+  const ib = $("#inbox"); if (ib) { delete ib.dataset.key; renderInbox(); } // the approval queue has its own open/closed state in each view
 }
 $("#btn-view").onclick = () => { proView = !proView; lsSet(VIEW_KEY, proView ? "pro" : "office"); applyView(); };
 if (noGL) $("#btn-view").hidden = true; // nothing to switch to
@@ -1035,7 +1050,7 @@ async function waitRun(id, max = 60000) {
 }
 function tourCard({ step = 0, title, text, actions = [] }) {
   const box = $("#tour"); if (box.parentNode !== document.body) document.body.append(box); // above every screen, the Scope screen included
-  box.hidden = false;
+  box.hidden = false; box.classList.toggle("offer", step === 0); // the offer (not yet playing) steps aside on full screens
   box.querySelector(".tr-dots").innerHTML = [1, 2, 3, 4].map((i) => `<i class="${i <= step ? "on" : ""}"></i>`).join("");
   box.querySelector("h3").textContent = title; box.querySelector("p").textContent = text;
   const act = box.querySelector(".tr-act"); act.innerHTML = "";
@@ -1051,16 +1066,26 @@ async function playTour() {
   const skip = [t("Skip"), () => endTour()];
   const run = async (step, title, text, agent, prompt) => {
     if (!tour) return;
-    tourCard({ step, title, text, actions: [skip] }); station.focus(lead.id);
+    tourCard({ step, title, text, actions: [skip] });
+    await selectAgent(agent.id); station.focus(lead.id); // the working member's own conversation: the work is visible as it happens
+    if (!tour) return;
     await sendPrompt({ text: prompt }, agent); await waitRun(agent.id); await pause(900);
   };
   await run(1, t("The analyst reads the document"), t("It turns the linked analysis document into numbered requirements, each with the document's own wording."), analyst, t("Extract the requirements from the linked documents and save them to the Scope list."));
   await run(2, t("…and checks every item against the code"), t("Each requirement gets a status and a pointer to the file and line where it lives, or a note saying it is missing."), analyst, t("Compare the requirements with the code and update their status."));
   await run(3, t("A different agent verifies"), t("The tester did not write the code. It runs the scenarios and must attach evidence: lines or tests that really exist in the project."), tester, t("Verify the requirements with evidence."));
   if (!tour) return;
+  await selectAgent(lead.id); if (!tour) return;
   reqsUI.open(lead);
+  // the last card stays until it is closed: the report opens in its own tab, and the example request is the way back into the office
+  const tryIt = async () => {
+    endTour(); if (reqsUI.isOpen) reqsUI.close();
+    await selectAgent(lead.id); station.focus(lead.id);
+    const p = $("#prompt"); p.value = t("Add an endpoint for the low stock warning"); fitPrompt(p, true); p.focus();
+    toast(t("An example request is in the message box. Press Enter to send it."));
+  };
   tourCard({ step: 4, title: t("One item says “done” but nothing proves it"), text: t("That is a mismatch, not a green tick. The proof report puts the whole chain on one page you can hand to somebody else."),
-    actions: [[t("Open the proof report"), () => { window.open(`/api/reqs/${encodeURIComponent(teamKey(lead))}/report`, "_blank", "noopener"); endTour(); }, true], [t("Close"), () => endTour()]] });
+    actions: [[t("Open the proof report"), () => window.open(`/api/reqs/${encodeURIComponent(teamKey(lead))}/report`, "_blank", "noopener"), true], [t("Give the team a job"), tryIt], [t("Close"), () => endTour()]] });
 }
 function offerTour() {
   if (!meta.demo || tour || lsGet(TOUR_KEY, 0)) return;
@@ -1127,12 +1152,13 @@ function renderInbox() {
   const waiting = agents.filter((a) => a.attention?.kind === "permission" && !isBusy(a));
   box.hidden = !waiting.length; if (!waiting.length) { box.innerHTML = ""; return; }
   const key = waiting.map((a) => a.id + a.attention.at).join("|"); if (box.dataset.key === key) return; box.dataset.key = key;
-  let collapsed = false; try { const v = localStorage.getItem("inboxCollapsed"); collapsed = v === "1" || (v == null && proView); } catch {}
+  const ck = proView ? "inboxCollapsedPro" : "inboxCollapsed"; // remembered per view: over the 3D office it is open, over the professional list it stays closed until asked
+  let collapsed = proView; try { const v = localStorage.getItem(ck); if (v != null) collapsed = v === "1"; } catch {}
   box.classList.toggle("collapsed", collapsed);
   box.innerHTML = `<button type="button" class="ib-head" aria-expanded="${!collapsed}"><span class="ib-dot"></span>${t("Waiting for your approval ({n})", { n: waiting.length })}<svg class="ib-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>`;
   box.querySelector(".ib-head").onclick = (e) => {
     const c = !box.classList.contains("collapsed"); box.classList.toggle("collapsed", c); e.currentTarget.setAttribute("aria-expanded", String(!c));
-    try { localStorage.setItem("inboxCollapsed", c ? "1" : "0"); } catch {}
+    try { localStorage.setItem(ck, c ? "1" : "0"); } catch {}
   };
   const SHOW = 2;
   for (const a of waiting.slice(0, SHOW)) {
@@ -1271,6 +1297,7 @@ function fillHeader(a) {
   $("#perm-name").textContent = perm[1];
   $("#perm-btn").classList.toggle("risky", perm[0] === "bypassPermissions");
   $("#perm-btn").title = perm[2];
+  launchUI.show(a);
   renderContext(a); renderLinked(a); renderTeamTabs(a); renderReqsBadge(a); renderTasksBadge(a); renderGitBadge(a); renderRunBadge(a);
   const team = teamOf(a);
   $("#prompt").placeholder = team.length > 1 && roleOf(a) === "dev" ? t("Write to the team; the lead hands work to the tester or analyst when needed") : team.length > 1 ? t("Talk directly to {role}", { role: roleLabel(a) }) : t("What do you want from this agent?  @ file · # document");
@@ -1496,6 +1523,9 @@ document.addEventListener("keydown", (e) => {
 // ---- usage limits (as reported by Claude Code)
 let usage = {};
 const USAGE_NAMES = { five_hour: t("5-hour limit"), seven_day: t("Weekly limit"), seven_day_opus: t("Weekly Opus limit"), overage: t("Extra usage") };
+// a limit that has its own model ("seven_day_fable"): named after the model
+const usageName = (k) => USAGE_NAMES[k] || (/^seven_day_(.+)$/.exec(k) ? t("Weekly {model} limit", { model: titleCase(RegExp.$1) }) : /^five_hour_(.+)$/.exec(k) ? t("5-hour {model} limit", { model: titleCase(RegExp.$1) }) : k);
+const titleCase = (s) => s.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 const resetMs = (t) => (t ? (t < 1e12 ? t * 1000 : t) : null);
 function fmtReset(at) {
   const ms = resetMs(at); if (!ms) return "";
@@ -1516,14 +1546,23 @@ function renderUsage() {
 function openUsage(btn) {
   const pop = $("#usage-pop");
   const rows = liveUsage();
-  pop.innerHTML = `<h4>${t("Usage")}</h4>` + rows.map(([k, v]) => `<div class="u-row"><div class="u-head"><span>${escHtml(USAGE_NAMES[k] || k)}</span><span>${t("{n}%", { n: Math.round(v.utilization * 100) })}</span></div>
+  pop.innerHTML = `<h4>${t("Usage")}</h4>` + rows.map(([k, v]) => `<div class="u-row"><div class="u-head"><span>${escHtml(usageName(k))}</span><span>${t("{n}%", { n: Math.round(v.utilization * 100) })}</span></div>
     <span class="u-bar ${barCls(v.utilization)}"><i style="width:${Math.round(v.utilization * 100)}%"></i></span>
     <small>${v.resetsAt ? t("Resets: {when}", { when: fmtReset(v.resetsAt) }) : ""}${v.status === "rejected" ? " · " + t("limit reached") : ""}</small></div>`).join("") +
     `<p>${t("Claude Code reports this with every answer; last update {time}.", { time: new Date(Math.max(...rows.map(([, v]) => v.seenAt || 0))).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) })}</p>`;
+  pop.insertAdjacentHTML("beforeend", `<div class="u-acct" id="u-acct"></div>`);
   pop.hidden = false;
-  const r = btn.getBoundingClientRect();
-  pop.style.top = r.bottom + 8 + "px"; pop.style.bottom = ""; pop.style.left = Math.max(8, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 8)) + "px";
-  btn.setAttribute("aria-expanded", "true");
+  const place = () => { const r = btn.getBoundingClientRect(); pop.style.top = r.bottom + 8 + "px"; pop.style.bottom = ""; pop.style.left = Math.max(8, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 8)) + "px"; };
+  place(); btn.setAttribute("aria-expanded", "true");
+  fillAccount(pop).then(place);
+}
+// who is signed in, and the "use another model when this one is busy" switch (asked for when the panel opens)
+async function fillAccount(pop) {
+  const a = await api("/api/account").catch(() => null), p = await api("/api/prefs").catch(() => ({})), box = pop.querySelector("#u-acct"); if (!box || !a) return;
+  const line = (k, v) => (v ? `<div class="u-kv"><span>${escHtml(k)}</span><b>${escHtml(v)}</b></div>` : "");
+  box.innerHTML = `<h4>${t("Account")}</h4>` + (a.loggedIn === false ? `<p>${t("Not signed in. Run claude, then /login.")}</p>` : line(t("Sign-in"), a.method) + line(t("Email"), a.email) + line(t("Organization"), a.org) + line(t("Plan"), a.plan) || `<p>${t("No account details from Claude Code.")}</p>`) +
+    `<label class="u-sw"><input type="checkbox" id="u-fb" ${p.fallback ? "checked" : ""}><span>${t("If the model is busy or unavailable, switch to {model}", { model: modelName(a.fallbackModel) })}</span></label>`;
+  box.querySelector("#u-fb").onchange = async (e) => { try { await api("/api/prefs", { method: "PUT", body: { fallback: e.target.checked } }); toast(e.target.checked ? t("Takes effect with the next message") : t("Switched off"), "ok"); } catch (err) { e.target.checked = !e.target.checked; toast(err.message, "bad"); } };
 }
 $("#usage-btn").onclick = toggle(openUsage);
 
@@ -1652,6 +1691,17 @@ function addDoc(id) {
 const chatEl = () => $("#chat");
 const nearBottom = () => { const c = chatEl(); return c.scrollHeight - c.scrollTop - c.clientHeight < 120; };
 let stick = true;
+/** In a run that goes on for long, drop the oldest messages from the page (not from the history) once there are well
+ *  over CHAT_LIVE_MAX of them and you are reading at the bottom. "Show earlier messages" at the top draws them again. */
+function trimChat() {
+  const c = chatEl(); if (c.childElementCount <= CHAT_LIVE_MAX + 150 || !nearBottom()) return;
+  let n = c.childElementCount - CHAT_LIVE_MAX, el = c.firstElementChild;
+  while (el && n > 0) { const next = el.nextElementSibling; if (!el.classList.contains("chat-older") && el !== todoCard && el !== liveBubble && el !== liveThink) { el.remove(); n--; } el = next; }
+  if (!c.querySelector(":scope > .chat-older")) {
+    const more = document.createElement("button"); more.type = "button"; more.className = "chat-older";
+    more.textContent = t("Show earlier messages"); more.onclick = () => loadChat(true); c.prepend(more);
+  }
+}
 function addMsg(cls, html, text) {
   const d = document.createElement("div"); d.className = "msg " + cls;
   if (text !== undefined) d.textContent = text; else d.innerHTML = html;
@@ -1729,11 +1779,18 @@ function fillDetail(d) {
   const pre = document.createElement("pre"); pre.className = "out" + (o.isError ? " bad" : "");
   pre.textContent = o.content.length > OUT_MAX ? o.content.slice(0, OUT_MAX) + "\n… " + t("{n} more characters", { n: o.content.length - OUT_MAX }) : o.content; det.append(pre);
 }
+// the station's own tools are named by what they do, not by their protocol name (mcp__team__…)
+function toolLabel(name) {
+  const L = { set_requirement_status: t("Scope"), save_requirements: t("Scope save"), list_requirements: t("Scope list"), requirement_detail: t("Scope detail"), verify_requirement: t("Verification"),
+    document_sections: t("Document sections"), mark_sections: t("Section marks"), report_missing_requirements: t("Missing requirements"),
+    create_task: t("New task"), list_tasks: t("Task list"), update_task: t("Task update"), notify_project: t("Sibling project") };
+  if (!name.startsWith("mcp__team__")) return name;
+  const k = name.slice(11); return L[k] || k.replace(/_/g, " ");
+}
 function toolRow(ev) {
   const d = addMsg("tool", `<div class="trow"><b></b><span></span><button type="button" class="topen" hidden title="${t("Show in folder")}">${ICON.folder}</button><em class="st">…</em></div><div class="tdetail" hidden></div>`);
   d.dataset.id = ev.toolUseId; d.dataset.name = ev.name;
-  const TOOL_LABEL = { mcp__team__set_requirement_status: t("Scope"), mcp__team__save_requirements: t("Scope save"), mcp__team__list_requirements: t("Scope list"), mcp__team__notify_project: t("Sibling project") };
-  d.querySelector("b").textContent = TOOL_LABEL[ev.name] || ev.name;
+  d.querySelector("b").textContent = toolLabel(ev.name);
   const sp = d.querySelector("span"); sp.textContent = relToAgent(ev.summary); sp.title = ev.summary || "";
   const det = d.querySelector(".tdetail"); d._input = ev.input; // the detail (diffs, file contents, outputs) is built when the row is opened: a long history has thousands of them
   if (isImagePath(ev.summary)) d.dataset.img = ev.summary;
@@ -1775,6 +1832,7 @@ function planCard(plan) {
 }
 
 // ---- permission card (tools that could not run)
+const PERM_OK = "Permission granted, continue where you left off."; // what every "allow" button sends; t("Permission granted, continue where you left off.") is its translation
 function denialCard(denials) {
   const specs = [...new Set(denials.flatMap((x) => x.specs || [x.spec]).filter(Boolean))];
   if (!specs.length) return;
@@ -1816,6 +1874,8 @@ function renderEvent(ev, replay = false) {
         chatEl().append(n); break;
       }
       const d = addMsg("user", "", ev.text);
+      // a permission card answered somewhere else (the approval queue, a notification, before a reload) is no longer a question
+      if (ev.text === PERM_OK || ev.text === t(PERM_OK)) for (const c of chatEl().querySelectorAll(".msg.perm .card-actions")) if (c.querySelector("button")) c.innerHTML = `<span class="muted-ok">${t("Allowed")}</span>`;
       if ((ev.text || "").length > 700 || (ev.text || "").split("\n").length > 12) { // long message: fold it
         d.classList.add("long");
         const more = document.createElement("button"); more.type = "button"; more.className = "more"; more.textContent = t("Show all");
@@ -2288,6 +2348,7 @@ function connectWS() {
     if (ev.type === "git") { gitUI.onEvent(ev); gitSoon(); return; }
     if (ev.type === "fs") { edUI.onFs(ev); return; }
     if (ev.type === "run-out") { runUI.onEvent(ev); return; }
+    if (ev.type === "launch") { launchUI.onEvent(ev); return; }
     if (ev.type === "run") { runUI.onEvent(ev); if (ev.status) { if (ev.status === "running") runCounts[ev.team] = (runCounts[ev.team] || 0); refreshRunCounts(); } return; }
     if (ev.type === "tasks") { tasksUI.onEvent(ev); overviewSoon(); if (current() && teamKey(current()) === ev.team) renderTasksBadge(); return; }
     if (ev.type === "reqs") { reqsUI.onEvent(ev); overviewSoon(); if (current() && teamKey(current()) === ev.team) renderReqsBadge(); return; }
@@ -2332,6 +2393,7 @@ function connectWS() {
       renderEvent(ev);
       // a long live session keeps adding to the page; when a run ends and you are at the bottom anyway, redraw just the tail
       if (ev.type === "result" && chatEl().childElementCount > CHAT_LIVE_MAX && nearBottom()) loadChat();
+      else trimChat(); // an hour-long run never ends: keep the page bounded while it goes on
     }
   };
   ws.onclose = () => {
@@ -2348,7 +2410,8 @@ function toolPhrase(name, summary = "") {
   const M = { Read: t("Reading: {file}", { file: f }), Edit: t("Editing: {file}", { file: f }), MultiEdit: t("Editing: {file}", { file: f }), Write: t("Writing: {file}", { file: f }), NotebookEdit: t("Editing: {file}", { file: f }),
     Bash: t("Command: {cmd}", { cmd }), PowerShell: t("Command: {cmd}", { cmd }), Grep: t("Searching: {query}", { query: summary }), Glob: t("Looking at files"), WebFetch: t("Reading a web page"), WebSearch: t("Searching the web"),
     mcp__team__assign_task: t("Assigning a task"), mcp__team__notify_project: t("Writing to a sibling project"), mcp__team__verify_requirement: t("Verifying"), mcp__team__save_requirements: t("Saving the scope"),
-    mcp__team__document_sections: t("Reading the document"), mcp__team__set_requirement_status: t("Updating the scope") };
+    mcp__team__document_sections: t("Reading the document"), mcp__team__set_requirement_status: t("Updating the scope"), mcp__team__mark_sections: t("Marking the document"),
+    mcp__team__create_task: t("Adding a task to the board"), mcp__team__update_task: t("Updating the task"), mcp__team__list_requirements: t("Reading the scope") };
   return (M[name] || (name.startsWith("mcp__team__") ? t("Scope") : `${name} ${f}`)).trim();
 }
 
@@ -2414,12 +2477,12 @@ $("#prompt-form").addEventListener("submit", async (e) => {
   // "@Tester try this" → the message goes to the tester, with that role's last result attached
   const low = text.toLocaleLowerCase(locale());
   const to = teamOf(a).find((m) => m.id !== a.id && (low.startsWith("@" + roleLabel(m).toLocaleLowerCase(locale()) + " ") || low === "@" + roleLabel(m).toLocaleLowerCase(locale())));
-  $("#prompt").value = ""; $("#prompt").style.height = ""; closeMention();
+  $("#prompt").value = ""; $("#prompt").style.height = ""; promptLen = 0; closeMention();
   try {
     const images = [];
     for (const f of toSend) images.push((await api(`/api/agents/${a.id}/upload`, { method: "POST", body: { name: f.name, dataUrl: f.dataUrl } })).path);
     if (to) {
-      $("#prompt").value = ""; $("#prompt").style.height = ""; closeMention();
+      $("#prompt").value = ""; $("#prompt").style.height = ""; promptLen = 0; closeMention();
       const rest = text.slice(roleLabel(to).length + 1).trim() || meta.roles?.[roleOf(to)]?.handoff || "";
       await handoff(to, rest, { images: images.length ? images : [], docs });
       return;
@@ -2497,7 +2560,17 @@ $("#prompt").addEventListener("keydown", (e) => {
   }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#prompt-form").requestSubmit(); }
 });
-$("#prompt").addEventListener("input", (e) => { const t = e.target; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 200) + "px"; updateMention(); });
+// The box grows with its text without making the page lay itself out again on every key: #prompt is size-contained
+// (style.css), so typing only lays out the box itself, and its height is touched only when the number of lines changes.
+// (Before, every key set height:auto and read scrollHeight, and each of those laid out the whole conversation: with an
+// hour of tool rows in the chat that was tens of milliseconds per key.)
+let promptLen = 0;
+function fitPrompt(t, force = false) {
+  const shorter = t.value.length < promptLen; promptLen = t.value.length;
+  if ((force || shorter) && t.style.height) { t.style.height = ""; } // may have lost lines: back to the minimum, then grow
+  if (t.scrollHeight > t.clientHeight + 1) t.style.height = Math.min(t.scrollHeight, 200) + "px";
+}
+$("#prompt").addEventListener("input", (e) => { fitPrompt(e.target); updateMention(); });
 $("#prompt").addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== $("#prompt")) closeMention(); }, 150));
 
 // ---- rename the agent (click the title)
@@ -2765,7 +2838,7 @@ if (meta.claudeMissing) { const w = $("#cli-warn"); w.textContent = meta.claudeM
 await refresh();
 lib.load().catch(() => {});
 refreshGitSummary(); refreshOverview(); refreshPayroll();
-setTimeout(offerTour, 1500); refreshCcSessions(); setInterval(refreshCcSessions, 180000);
+setTimeout(offerTour, 1500); refreshCcSessions(); poll(refreshCcSessions, 180000);
 applyView();
 connectWS();
 const q = new URLSearchParams(location.search).get("agent");
@@ -2783,7 +2856,7 @@ function saveDraft(team) {
 }
 function restoreDraft(team) {
   const t = $("#prompt"); t.value = drafts[team] || "";
-  t.style.height = "auto"; if (t.value) t.style.height = Math.min(t.scrollHeight, 200) + "px";
+  fitPrompt(t, true);
 }
 { let tm; $("#prompt").addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(() => current() && saveDraft(teamKey(current())), 400); }); }
 $("#prompt-form").addEventListener("submit", () => { const a = current(); if (a) { delete drafts[teamKey(a)]; lsSet("ecelon.drafts", drafts); } }, true);
@@ -3032,11 +3105,13 @@ function renderBc() {
   const apply = (v) => { z = Math.min(2, Math.max(0.7, Math.round(v * 20) / 20)); chatEl().style.zoom = z === 1 ? "" : String(z); try { localStorage.setItem("chatZoom", String(z)); } catch {} updateJump(); window.__hud?.(t("Chat text {n}%", { n: Math.round(z * 100) })); };
   apply(z); $("#zoom-hud").hidden = true;
   const inEditor = (el) => !!el?.closest?.("#ed-monaco, #editor, #ed-diff-host");
-  addEventListener("wheel", (e) => { if (!e.ctrlKey) return; e.preventDefault(); if (inEditor(e.target)) return; apply(z + (e.deltaY < 0 ? 0.05 : -0.05)); }, { passive: false, capture: true });
+  // while JS Study is open it takes the zoom for itself (reading text, or the code size where an editor is open)
+  const study = (step) => { if (!studyUI?.isOpen) return false; window.__hud?.(studyUI.zoomBy(step)); return true; };
+  addEventListener("wheel", (e) => { if (!e.ctrlKey) return; e.preventDefault(); if (study(e.deltaY < 0 ? 1 : -1)) return; if (inEditor(e.target)) return; apply(z + (e.deltaY < 0 ? 0.05 : -0.05)); }, { passive: false, capture: true });
   addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     const k = e.key; if (!["+", "=", "-", "_", "0"].includes(k)) return;
-    e.preventDefault(); if (inEditor(document.activeElement)) return;
+    e.preventDefault(); if (study(k === "0" ? 0 : k === "-" || k === "_" ? -1 : 1)) return; if (inEditor(document.activeElement)) return;
     apply(k === "0" ? 1 : z + (k === "-" || k === "_" ? -0.05 : 0.05));
   }, true);
 }

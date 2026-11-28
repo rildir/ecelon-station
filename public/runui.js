@@ -6,8 +6,8 @@ const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 const ago = (ts) => { const s = (Date.now() - ts) / 1000; return s < 60 ? t("just now") : s < 3600 ? t("{n} min ago", { n: Math.floor(s / 60) }) : t("{n} h ago", { n: Math.floor(s / 3600) }); };
 
 // ANSI colors → HTML (only basic SGR: color, bold, reset)
-const COLORS = ["#4b5275", "#ff6b81", "#7ee2a8", "#ffd27a", "#6fb6ff", "#d79bff", "#6fe3ff", "#e6e8f5"];
-const BRIGHT = ["#8f8ab4", "#ff8095", "#9ff2c4", "#ffe29a", "#9ccfff", "#e4b8ff", "#9ff0ff", "#ffffff"];
+const COLORS = ["#55534e", "#ff6b81", "#7ee2a8", "#ffd27a", "#6fb6ff", "#d79bff", "#6fe3ff", "#e6e8f5"];
+const BRIGHT = ["#8c8981", "#ff8095", "#9ff2c4", "#ffe29a", "#9ccfff", "#e4b8ff", "#9ff0ff", "#ffffff"];
 function ansiLine(line) {
   let out = "", open = false, st = {};
   const style = () => { const css = []; if (st.fg) css.push(`color:${st.fg}`); if (st.bold) css.push("font-weight:700"); if (st.dim) css.push("opacity:.6"); return css.join(";"); };
@@ -144,7 +144,7 @@ export function createRuns(ctx) {
     const head = `<div class="pb-top"><span>${all.length ? t("{errors} errors, {warnings} {warnings|warning|warnings} · {sources}", { errors: all.filter((x) => x.severity === "error").length, warnings: all.filter((x) => x.severity !== "error").length, sources: probs.map((g) => esc(g.label)).join(", ") }) : probs.length ? t("No problems found in the last check.") : t("No check has been run yet.")}</span><span class="cb-spacer"></span>
       ${checks.length ? `<select id="pb-check">${checks.map((c) => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join("")}</select><button type="button" class="btn ghost sm" data-act="check">${t("Check")}</button>` : ""}
       ${all.length ? `<button type="button" class="btn primary sm" data-act="fix" title="${t("Have the team lead fix the errors")}">${t("Have the team fix")}</button>` : ""}</div>`;
-    if (!all.length) { box.innerHTML = head + `<div class="lv-none"><b>${probs.length ? t("Clean") : t("Problem list is empty")}</b><p>${t("When you run a build, type check or lint command, the errors in its output are listed here as file:line; click one to open it in the editor.")}</p></div>`; return; }
+    if (!all.length) { box.innerHTML = head + `<div class="lv-none"><div class="le-art"><svg viewBox="0 0 16 16"><path d="m3 8.5 3.2 3.2L13 5"/></svg></div><b>${probs.length ? t("Clean") : t("Problem list is empty")}</b><p>${t("When you run a build, type check or lint command, the errors in its output are listed here as file:line; click one to open it in the editor.")}</p></div>`; return; }
     const byFile = new Map(); for (const x of all) { if (!byFile.has(x.file)) byFile.set(x.file, []); byFile.get(x.file).push(x); }
     box.innerHTML = head + [...byFile].map(([f, items]) => `<details open class="pb-file"><summary><b>${esc(f.split("/").pop())}</b><span>${esc(f)}</span><em>${items.length}</em></summary>
       ${items.map((x) => `<div class="pb-item sv-${x.severity}" data-f="${esc(x.file)}" data-l="${x.line}" data-c="${x.col}"><i></i><span>${esc(x.message)}${x.code ? ` <code>${esc(x.code)}</code>` : ""}</span><small>${x.line}:${x.col}</small></div>`).join("")}</details>`).join("");

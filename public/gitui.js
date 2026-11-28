@@ -34,7 +34,7 @@ export function createGit(ctx) {
     root.classList.remove("norepo");
     render();
   }
-  const emptyDiff = () => `<div class="lv-none"><b>${t("Select a file")}</b><p>${t("You will see the change here line by line.")}</p></div>`;
+  const emptyDiff = () => `<div class="lv-none"><div class="le-art"><svg viewBox="0 0 16 16"><path d="M4 3.5v4M2 5.5h4M10 5.5h4M3 12.5h10"/></svg></div><b>${t("Select a file")}</b><p>${t("You will see the change here line by line.")}</p></div>`;
 
   function render() {
     $("#gt-title").textContent = agent.name;

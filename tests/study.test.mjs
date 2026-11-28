@@ -1,7 +1,7 @@
 // The rules of the JS Study module (public/study-core.js): plain functions, no page and no clock.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { topicState, streak, pickWarmup, compareOutput, validatePack, mergePack, shuffleOptions, seeded, quizText, addDays, dayKey, allStates } from "../public/study-core.js";
+import { topicState, streak, pickWarmup, compareOutput, validatePack, mergePack, shuffleOptions, seeded, quizText, addDays, dayKey, allStates, nextSteps, emptyProgress, problemProgram, judgeProblem, pickTopicTest } from "../public/study-core.js";
 
 const T = (status = "yeni") => ({ id: "x", title: "X", status });
 let n = 0;
@@ -153,4 +153,76 @@ test("days: a local day key, and the states of all topics at once", () => {
   assert.equal(dayKey(new Date(2026, 10, 25, 23, 59)), "2026-11-25");
   assert.equal(addDays("2026-12-31", 1), "2027-01-01");
   assert.equal(allStates(content, [log(D(0), "q-a1", false)], D(0)).a.status, "orta");
+});
+
+test("a topic page (group, lesson) is kept when valid; a broken lesson is refused as a whole", () => {
+  const lesson = { summary: "kısa", points: ["bir", "iki"], example: "console.log(1);", mistake: "hata", say: "söyle", talk: [{ ask: "Soru?", answer: "Cevap." }] };
+  const ok = validatePack({ topics: [{ id: "a", title: "A", status: "yeni", group: "1. Temel", lesson }] });
+  assert.ok(ok.ok);
+  assert.deepEqual(ok.pack.topics[0].lesson, lesson);
+  assert.equal(ok.pack.topics[0].group, "1. Temel");
+  const steps = validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: { steps: [{ title: "T", text: "x", code: "console.log(1);\n" }, { text: "y", snippet: "<div>" }] } }] });
+  assert.deepEqual(steps.pack.topics[0].lesson.steps, [{ title: "T", text: "x", code: "console.log(1);" }, { text: "y", snippet: "<div>" }]); // code runs here, a snippet is only shown
+  assert.equal(validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: { steps: [{ code: "no text" }] } }] }).ok, false);
+  const check = { ask: "Hangisi?", options: ["bir", "iki"], correct: 1, why: "çünkü" };
+  assert.deepEqual(validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: { steps: [{ text: "x", check }] } }] }).pack.topics[0].lesson.steps[0].check, check);
+  for (const bad of [{ ...check, correct: 2 }, { ...check, options: ["bir", "bir"] }, { ...check, why: "" }]) assert.equal(validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: { steps: [{ text: "x", check: bad }] } }] }).ok, false);
+  const old = validatePack({ topics: [{ id: "a", title: "A", status: "yeni" }] }); // a topic without a page is still valid
+  assert.ok(old.ok && !("lesson" in old.pack.topics[0]));
+  for (const bad of [{ ...lesson, points: "x" }, { ...lesson, talk: [{ ask: "q" }] }, { ...lesson, summary: "" }, "metin"]) {
+    const r = validatePack({ topics: [{ id: "a", title: "A", status: "yeni", lesson: bad }] });
+    assert.equal(r.ok, false);
+  }
+});
+
+test("merging a pack with a page keeps the topic's place and replaces its page", () => {
+  const base = { topics: [{ id: "a", title: "A", status: "orta" }, { id: "b", title: "B", status: "yeni" }], hints: [], questions: [], tasks: [] };
+  const v = validatePack({ topics: [{ id: "b", title: "B", status: "yeni", lesson: { summary: "özet" } }] }, base);
+  const m = mergePack(base, v.pack);
+  assert.deepEqual(m.content.topics.map((x) => x.id), ["a", "b"]);
+  assert.equal(m.content.topics[1].lesson.summary, "özet");
+  assert.equal(m.report.topics.updated, 1);
+});
+
+test("the next step: warm-up when something is due, then the lesson left half-way, then the first unread lesson", () => {
+  const content = { topics: [{ id: "a", title: "A", status: "yeni", lesson: { summary: "x", steps: [{ text: "1" }, { text: "2" }] } }, { id: "b", title: "B", status: "yeni", lesson: { summary: "y" } }, { id: "c", title: "C", status: "yeni" }],
+    questions: [{ id: "q1", topic: "a", code: "1", ask: "?", options: ["1", "2"], correct: 0, why: "w" }], hints: [], tasks: [] };
+  const kinds = (p) => nextSteps(content, { ...emptyProgress(), ...p }, allStates(content, p.answers || [], "2026-01-10"), "2026-01-10").map((s) => s.kind + (s.id ? ":" + s.id : "") + (s.resume ? ":resume" : ""));
+  assert.deepEqual(kinds({}), ["lesson:a", "warmup-plain"]); // nothing yet: start the first lesson
+  assert.deepEqual(kinds({ lessons: { a: { step: 1, done: false, at: "2026-01-09T10:00:00Z" } } }), ["lesson:a:resume", "lesson:b", "warmup-plain"]);
+  assert.deepEqual(kinds({ lessons: { a: { step: 2, done: true }, b: { step: 0, done: true } } }), ["warmup-plain"]); // c has no lesson to read
+  const wrong = [{ id: "x", questionId: "q1", topic: "a", tarih: "2026-01-09T10:00:00Z", gun: "2026-01-09", dogruMu: false, secilen: "2" }];
+  assert.equal(kinds({ answers: wrong })[0], "warmup"); // yesterday's wrong answer comes before any lesson
+  const done = kinds({ answers: wrong, sessions: [{ id: "s", tur: "isinma", tarih: "2026-01-10T08:00:00Z", gun: "2026-01-10", dogru: 1, toplam: 1 }] });
+  assert.ok(!done.includes("warmup")); // today's warm-up is done: it is not suggested again
+});
+
+test("a problem is judged by its test calls: value, thrown error, promise, and a run that never got to the tests", async () => {
+  const tests = [{ call: "topla(1, 2)", expect: 3 }, { call: "topla(2, 2)", expect: 5 }, { call: "patla()", expect: 1 }, { call: "Promise.resolve([1, { a: 2 }])", expect: [1, { a: 2 }] }, { call: "bos()", expect: null }];
+  const lines = [], log = console.log; console.log = (...a) => lines.push({ kind: "log", text: a.join(" ") });
+  try { (0, eval)(problemProgram('function topla(a, b) { return a + b; }\nfunction patla() { throw new TypeError("x"); }\nfunction bos() {}\nconsole.log("benim satırım");', tests)); await new Promise((r) => setTimeout(r, 30)); } finally { console.log = log; }
+  const v = judgeProblem(tests, lines);
+  assert.deepEqual(v.rows.map((r) => r.ok), [true, false, false, true, false]);
+  assert.equal(v.rows[1].got, "4"); assert.equal(v.rows[2].error, "TypeError: x"); assert.equal(v.rows[4].got, "undefined"); // undefined is not null
+  assert.equal(v.passed, 2); assert.equal(v.ok, false); assert.deepEqual(v.output, ["benim satırım"]);
+  const none = judgeProblem(tests, [{ kind: "error", text: "SyntaxError" }], true); // the code never reached the tests
+  assert.equal(none.ran, false); assert.equal(none.passed, 0); assert.equal(none.timedOut, true); assert.deepEqual(none.errors, ["SyntaxError"]);
+  const ok = validatePack({ problems: [{ id: "p1", title: "T", level: 1, description: "d", starter: "function f() {}", tests: [{ call: "f()", expect: null }] }] });
+  assert.ok(ok.ok); assert.equal(mergePack({ topics: [], hints: [], questions: [], tasks: [] }, ok.pack).report.problems.added, 1);
+  assert.equal(validatePack({ problems: [{ id: "p1", title: "T", level: 4, description: "d", starter: "x", tests: [] }] }).ok, false);
+});
+
+test("taking a topic test again brings the questions not seen yet, then the missed ones, then the oldest", () => {
+  const content = { questions: Array.from({ length: 25 }, (_, i) => ({ id: "q" + i, topic: "x" })).concat([{ id: "other", topic: "y" }]) };
+  const first = pickTopicTest(content, "x", seeded(1), 10, []);
+  assert.equal(first.length, 10); assert.ok(first.every((q) => q.topic === "x"));
+  const answers = first.map((q, i) => ans(D(i), i !== 3, q.id)); // all seen, one of them wrong
+  const second = pickTopicTest(content, "x", seeded(2), 10, answers);
+  assert.ok(second.every((q) => !first.includes(q)), "the second test has none of the first test's questions");
+  const answers2 = answers.concat(second.map((q) => ans(D(20), true, q.id)));
+  const third = pickTopicTest(content, "x", seeded(3), 10, answers2);
+  const unseen = content.questions.filter((q) => q.topic === "x" && !first.includes(q) && !second.includes(q));
+  assert.deepEqual(third.slice(0, 5).map((q) => q.id).sort(), unseen.map((q) => q.id).sort()); // the 5 never asked
+  assert.equal(third[5].id, first[3].id); // then the one got wrong
+  assert.deepEqual(third.slice(6).map((q) => q.id), first.filter((_, i) => i !== 3).slice(0, 4).map((q) => q.id)); // then the oldest
 });

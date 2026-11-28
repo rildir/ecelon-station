@@ -44,7 +44,7 @@ export function createTasks(ctx) {
     $("#tk-board").innerHTML = data.items.length || adding ? COLS.map(([st, label]) => {
       const col = items.filter((x) => x.status === st).sort((a, b) => ["high", "normal", "low"].indexOf(a.priority) - ["high", "normal", "low"].indexOf(b.priority) || a.createdAt - b.createdAt);
       return `<section class="tk-col c-${st}"><h3>${label()} <em>${col.length}</em></h3><div class="tk-list">${col.map(card).join("") || `<p class="tk-empty">—</p>`}</div></section>`;
-    }).join("") : `<div class="tk-none"><b>${t("The board is empty")}</b><p>${t("When an agent cannot do something, or needs you or another role, it leaves a task here instead of stopping.")}</p></div>`;
+    }).join("") : `<div class="lib-empty tk-none"><div class="le-art"><svg viewBox="0 0 16 16"><rect x="2" y="2.5" width="3.5" height="11" rx="1"/><rect x="6.25" y="2.5" width="3.5" height="7" rx="1"/><rect x="10.5" y="2.5" width="3.5" height="9" rx="1"/></svg></div><b>${t("The board is empty")}</b><p>${t("When an agent cannot do something, or needs you or another role, it leaves a task here instead of stopping.")}</p></div>`;
     fillDeltas();
   }
   // what each isolated task has changed so far: "+12 −3 · 2 files"
