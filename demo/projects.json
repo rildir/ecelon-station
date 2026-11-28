@@ -1,0 +1,13 @@
+{
+  "lead": "aurora-stock",
+  "projects": [
+    { "dir": "aurora-stock",      "name": { "en": "aurora-stock",      "tr": "aurora-stok" } },
+    { "dir": "aurora-sales",      "name": { "en": "aurora-sales",      "tr": "aurora-satis" } },
+    { "dir": "aurora-purchasing", "name": { "en": "aurora-purchasing", "tr": "aurora-satin-alma" } },
+    { "dir": "aurora-finance",    "name": { "en": "aurora-finance",    "tr": "aurora-finans" } },
+    { "dir": "aurora-production", "name": { "en": "aurora-production", "tr": "aurora-uretim" } },
+    { "dir": "aurora-payroll",    "name": { "en": "aurora-payroll",    "tr": "aurora-bordro" } },
+    { "dir": "aurora-einvoice",   "name": { "en": "aurora-einvoice",   "tr": "aurora-efatura" } },
+    { "dir": "aurora-field",      "name": { "en": "aurora-field",      "tr": "aurora-saha" } }
+  ]
+}

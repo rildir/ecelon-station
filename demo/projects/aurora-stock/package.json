@@ -1,11 +1,11 @@
 {
-  "name": "aurora-api",
+  "name": "aurora-stock",
   "version": "0.4.2",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node --watch src/server.js",
-    "test": "node --test tests/"
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.21.2"

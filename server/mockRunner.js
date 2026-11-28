@@ -34,7 +34,7 @@ function recipeFor(agent, prompt) {
     let pkg = {}; try { pkg = JSON.parse(fs.readFileSync(path.join(agent.cwd, "package.json"), "utf8")); } catch {}
     return { file, from, to, stat: "+7 −1", what: t("`GET /inventory/low` returns the cards under their minimum"), files: "src/models/stock.js\nsrc/routes/inventory.js\nsrc/routes/transfers.js\nsrc/server.js\ntests/inventory.test.js",
       apply: () => fs.writeFileSync(f, src.replace(from, to).replace(/\n/g, eol)),
-      testOut: `> ${pkg.name || "aurora-api"}@${pkg.version || "0.4.2"} test\n> node --test tests/\n\n✔ stock cards can be looked up by code (0.6ms)\n✔ a transfer never takes more than the source has (0.2ms)\n✔ listCards returns copies (0.1ms)\nℹ tests 3\nℹ pass 3\nℹ fail 0` };
+      testOut: `> ${pkg.name || "aurora-stock"}@${pkg.version || "0.4.2"} test\n> node --test\n\n✔ stock cards can be looked up by code (0.6ms)\n✔ a transfer never takes more than the source has (0.2ms)\n✔ listCards returns copies (0.1ms)\nℹ tests 3\nℹ pass 3\nℹ fail 0` };
   } catch { return null; }
 }
 // "Task T-003 from the task board: …" (the board's Start button): the id, and the title without that prefix

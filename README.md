@@ -13,7 +13,7 @@ Run several tasks at once, each on its own git branch, and merge what you approv
 ![Node 20+](https://img.shields.io/badge/node-20%2B-339933)
 ![Local only](https://img.shields.io/badge/runs-100%25%20local-success)
 
-<img src="docs/media/hero.gif" alt="The sample team turns a spec into requirements, checks them against the code, a different agent verifies them, and one item the document calls done ends up as a mismatch" width="860">
+<img src="docs/media/hero.gif" alt="One message goes to the eight teams of a fictional ERP and every room starts working at once" width="860">
 
 [English](README.md) · [Türkçe](README.tr.md)
 
@@ -21,7 +21,7 @@ Run several tasks at once, each on its own git branch, and merge what you approv
 
 ## Try it in 30 seconds
 
-No Claude Code, no API key and no project of your own needed: the demo runs scripted agents on three sample projects.
+No Claude Code, no API key and no project of your own needed: the demo runs scripted agents in a small fictional ERP: eight project rooms, one per module.
 
 ```bash
 npx github:rildir/ecelon-station --demo
@@ -100,15 +100,15 @@ at the same time without touching each other's files or yours. The task board sh
 the diff, then **Merge** or **Discard**. A conflict is never left half-done in your working copy: the merge is
 aborted and the branch is kept for you.
 
-<p align="center"><img src="docs/media/tasks.png" alt="Task board: two tasks running on their own branches with their changes, a tester task and a task for the user" width="860"></p>
-<p align="center"><img src="docs/media/branch-diff.png" alt="The diff of a task's branch, ready to merge" width="860"></p>
+<p align="center"><img src="docs/media/tasks.png" alt="Task board: four open tasks, one of them a decision for you, and the low stock warning done" width="860"></p>
+<p align="center"><img src="docs/media/git.png" alt="Git screen: the real diff of the low stock route, before the commit" width="860"></p>
 
 ### A team per project, not a single chat
 Each project gets a **lead**, an **analyst**, a **tester** and a **reviewer**, each with its own session. Only the lead
 writes files; the analyst and reviewer read; the tester reports problems instead of quietly "fixing" them. Hand work
 over with a button or by typing `@tester`.
 
-<p align="center"><img src="docs/media/chat.png" alt="Projects on the left, the tester's chat on the right with its verification result and a permission card" width="860"></p>
+<p align="center"><img src="docs/media/chat.png" alt="The stock room up close, the tester's verification result in the chat" width="860"></p>
 
 ### Document coverage: nothing slips through
 Every paragraph, list item, table row and heading of the document is tracked. Sections that no requirement covers are
@@ -121,7 +121,7 @@ Coverage is computed, not claimed.
 A sober **professional view** (projects, roles, evidence, tasks; no scene, no characters, no sound) for the office,
 and a 3D **office view** where every project is a room and every role a character at a desk. One click switches.
 
-<p align="center"><img src="docs/media/board.png" alt="Professional view: projects with their evidence bar, tasks and runs this week" width="430"> <img src="docs/media/station.png" alt="Office view: three project rooms with their agents" width="430"></p>
+<p align="center"><img src="docs/media/board.png" alt="Professional view: eight projects with their evidence bar, tasks and runs this week" width="430"> <img src="docs/media/station.png" alt="Office view: the eight project rooms of a fictional ERP" width="430"></p>
 
 ### The rest
 - **Audit trail:** every command, file write and permission (and who allowed it) in an append-only, hash-chained log
